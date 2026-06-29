@@ -133,7 +133,15 @@ export function CompletionSection({
             <Spinner />
           </div>
         ) : records.length === 0 ? (
-          <p className="text-sm text-ink-500">No completion proof submitted yet.</p>
+          <div className="rounded-lg border border-dashed border-ink-200 bg-ink-50/50 px-4 py-6 text-center">
+            <p className="text-sm font-medium text-ink-700">
+              No completion proof yet
+            </p>
+            <p className="mt-1 text-xs text-ink-500">
+              The contractor can add a note and photos below when the work is
+              done.
+            </p>
+          </div>
         ) : (
           <ul className="space-y-3">
             {records.map((r) => (
@@ -182,6 +190,17 @@ export function CompletionSection({
                 <p className="mt-2 text-xs text-ink-400">
                   Submitted {formatDate(r.submitted_at)}
                 </p>
+                {r.review_notes && (
+                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
+                    <p className="text-xs font-medium text-amber-800">
+                      GC feedback
+                      {r.reviewed_at ? ` · ${timeAgo(r.reviewed_at)}` : ""}
+                    </p>
+                    <p className="mt-0.5 whitespace-pre-wrap text-sm text-amber-900">
+                      {r.review_notes}
+                    </p>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
