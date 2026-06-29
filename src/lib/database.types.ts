@@ -117,6 +117,8 @@ export interface Contractor {
 }
 
 /** The core workflow item: a specific piece of work to track. */
+export type ScheduleConfirmationStatus = "Pending" | "Confirmed" | "Declined";
+
 export interface TradePhase {
   id: string;
   project_id: string;
@@ -127,6 +129,13 @@ export interface TradePhase {
   status: TradePhaseStatus;
   scheduled_start_date: string | null;
   scheduled_end_date: string | null;
+  /**
+   * Whether the assigned contractor has confirmed the scheduled dates
+   * (Sprint 3). Null means no confirmation has been requested yet.
+   */
+  schedule_confirmation_status: ScheduleConfirmationStatus | null;
+  /** Optional reason the contractor gave when declining the schedule. */
+  schedule_confirmation_note: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

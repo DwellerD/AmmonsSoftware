@@ -9,7 +9,12 @@
  * is controlled by Firebase Authentication and Firestore security rules.
  */
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
-import { getAuth, type Auth } from "firebase/auth";
+import {
+  getAuth,
+  signInAnonymously,
+  type Auth,
+  type User,
+} from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 import { getStorage, type FirebaseStorage } from "firebase/storage";
 
@@ -59,4 +64,21 @@ export function getDb(): Firestore {
 /** Returns the Cloud Storage instance (used for completion photos). */
 export function getFirebaseStorage(): FirebaseStorage {
   return getStorage(getFirebaseApp());
+}
+
+/**
+ * Ensures there is a signed-in Firebase user, signing in anonymously if needed.
+ *
+ * Contractors open tokenized action links without an account, but Firestore
+ * security rules require an authenticated request to read/write the scoped
+ * data. A lightweight anonymous sign-in satisfies the rules while the action
+ * link itself controls what the contractor is allowed to do.
+ *
+ * Requires the Anonymous sign-in provider to be enabled in Firebase Auth.
+ */
+export async function ensureAnonymousSession(): Promise<User> {
+  const auth = getFirebaseAuth();
+  if (auth.currentUser) return auth.currentUser;
+  const cred = await signInAnonymously(auth);
+  return cred.user;
 }

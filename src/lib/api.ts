@@ -50,6 +50,7 @@ import type {
   PunchItem,
   PunchItemStatus,
   PunchPriority,
+  ScheduleConfirmationStatus,
   Trade,
   TradePhase,
   TradePhaseStatus,
@@ -198,6 +199,8 @@ function mapPhase(s: Snap): TradePhase {
     status: d.status as TradePhaseStatus,
     scheduled_start_date: d.scheduled_start_date ?? null,
     scheduled_end_date: d.scheduled_end_date ?? null,
+    schedule_confirmation_status: d.schedule_confirmation_status ?? null,
+    schedule_confirmation_note: d.schedule_confirmation_note ?? null,
     created_by: d.created_by ?? null,
     created_at: toIso(d.created_at),
     updated_at: toIso(d.updated_at),
@@ -1418,4 +1421,36 @@ export async function revokeActionLink(
     updated_at: serverTimestamp(),
   });
   return mapActionLink((await getDoc(ref)) as Snap);
+}
+
+/**
+ * Records a contractor's schedule confirmation decision on a trade phase
+ * (Sprint 3). Confirming or declining updates the phase's confirmation status
+ * (and note, for declines) and writes an activity log entry.
+ */
+export async function setPhaseScheduleConfirmation(
+  phaseId: string,
+  decision: Exclude<ScheduleConfirmationStatus, "Pending">,
+  note?: string | null,
+): Promise<TradePhase> {
+  const ref = doc(getDb(), COLLECTIONS.tradePhases, phaseId);
+  await updateDoc(ref, {
+    schedule_confirmation_status: decision,
+    schedule_confirmation_note: decision === "Declined" ? note ?? null : null,
+    updated_at: serverTimestamp(),
+  });
+  const phase = mapPhase((await getDoc(ref)) as Snap);
+  await logActivity({
+    action_type: decision === "Confirmed" ? "schedule_confirmed" : "schedule_declined",
+    entity_type: "trade_phase",
+    entity_id: phase.id,
+    project_id: phase.project_id,
+    description:
+      decision === "Confirmed"
+        ? `Contractor confirmed the schedule for ${phase.title}`
+        : `Contractor declined the schedule for ${phase.title}${
+            note ? `: ${note}` : ""
+          }`,
+  });
+  return phase;
 }

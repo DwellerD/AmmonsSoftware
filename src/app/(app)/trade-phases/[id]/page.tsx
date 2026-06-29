@@ -20,6 +20,7 @@ import { MaterialsSection } from "@/components/phase/MaterialsSection";
 import { CompletionSection } from "@/components/phase/CompletionSection";
 import { PunchItemsSection } from "@/components/phase/PunchItemsSection";
 import { PhaseDocumentsSection } from "@/components/phase/PhaseDocumentsSection";
+import { ScheduleConfirmationManager } from "@/components/phase/ScheduleConfirmationManager";
 import type {
   TradePhaseStatus,
   TradePhaseWithRelations,
@@ -228,6 +229,15 @@ export default function TradePhaseDetailPage() {
               </Button>
             </CardBody>
           </Card>
+
+          <ScheduleConfirmationManager
+            phaseId={phase.id}
+            projectId={phase.project_id}
+            contractorId={phase.contractor_id}
+            contractorName={phase.contractor?.company_name ?? null}
+            confirmationStatus={phase.schedule_confirmation_status}
+            confirmationNote={phase.schedule_confirmation_note}
+          />
         </div>
       </div>
 
