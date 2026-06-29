@@ -35,6 +35,9 @@ const icons = {
   contractors: (
     <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-4 0-8 2-8 5v1h16v-1c0-3-4-5-8-5Z" />
   ),
+  materials: (
+    <path d="M12 2 3 7v10l9 5 9-5V7l-9-5Zm0 2.3L18.5 8 12 11.7 5.5 8 12 4.3ZM5 9.7l6 3.4v6.6l-6-3.3V9.7Zm14 0v6.7l-6 3.3v-6.6l6-3.4Z" />
+  ),
 };
 
 const NAV_ITEMS: NavItem[] = [
@@ -54,6 +57,11 @@ const NAV_ITEMS: NavItem[] = [
     label: "Contractors",
     href: "/contractors",
     icon: <Icon>{icons.contractors}</Icon>,
+  },
+  {
+    label: "Materials",
+    href: "/material-orders/new",
+    icon: <Icon>{icons.materials}</Icon>,
   },
 ];
 

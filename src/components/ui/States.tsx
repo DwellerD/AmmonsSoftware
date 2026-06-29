@@ -52,3 +52,15 @@ export function ErrorAlert({ message }: { message: string }) {
     </div>
   );
 }
+
+/** A green banner confirming a successful action. */
+export function SuccessAlert({ message }: { message: string }) {
+  return (
+    <div
+      role="status"
+      className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"
+    >
+      {message}
+    </div>
+  );
+}
