@@ -27,7 +27,27 @@ export type ActivityAction =
   | "trade_created"
   | "contractor_created"
   | "trade_phase_created"
-  | "trade_phase_status_updated";
+  | "trade_phase_status_updated"
+  | "material_order_added"
+  | "completion_submitted"
+  | "inspection_recorded"
+  | "punch_item_created"
+  | "punch_item_resolved";
+
+/** Where a material order stands in the procurement/delivery process. */
+export type MaterialOrderStatus =
+  | "Needed"
+  | "Ordered"
+  | "Arriving"
+  | "Received"
+  | "Delayed"
+  | "Cancelled";
+
+/** Outcome of a GC inspection on a trade phase. */
+export type InspectionResult = "Passed" | "Failed" | "Needs Rework";
+
+/** Lifecycle of a punch-list item (a defect or fix to close out). */
+export type PunchItemStatus = "Open" | "In Progress" | "Resolved";
 
 /** A user account profile, linked 1:1 with a Firebase auth user. */
 export interface Profile {
@@ -114,4 +134,65 @@ export interface TradePhaseWithRelations extends TradePhase {
   trade: Pick<Trade, "id" | "name"> | null;
   contractor: Pick<Contractor, "id" | "company_name"> | null;
   project: Pick<Project, "id" | "name"> | null;
+}
+
+/* ---------------------------------------------------------------------------
+ * Sprint 2: material tracking, completion proof, inspections, punch items.
+ * Each of these belongs to a single trade phase (via trade_phase_id) and also
+ * stores project_id so the data can be rolled up per project later.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * A material order tracked for a project, optionally tied to a specific trade
+ * phase and/or trade. Captures procurement and delivery progress.
+ */
+export interface MaterialOrder {
+  id: string;
+  name: string;
+  supplier: string | null;
+  expected_arrival_date: string | null;
+  actual_arrival_date: string | null;
+  status: MaterialOrderStatus;
+  notes: string | null;
+  project_id: string;
+  trade_phase_id: string | null;
+  trade_id: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Proof that work on a trade phase is complete (a note + optional photo). */
+export interface CompletionRecord {
+  id: string;
+  trade_phase_id: string;
+  project_id: string;
+  note: string | null;
+  photo_url: string | null;
+  submitted_by: string | null;
+  created_at: string;
+}
+
+/** A GC inspection result recorded against a trade phase. */
+export interface Inspection {
+  id: string;
+  trade_phase_id: string;
+  project_id: string;
+  result: InspectionResult;
+  notes: string | null;
+  inspector_id: string | null;
+  created_at: string;
+}
+
+/** A punch-list item: a defect or task to close out a trade phase. */
+export interface PunchItem {
+  id: string;
+  trade_phase_id: string;
+  project_id: string;
+  description: string;
+  status: PunchItemStatus;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  resolved_at: string | null;
 }

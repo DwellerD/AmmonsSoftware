@@ -1,4 +1,10 @@
-import type { TradePhaseStatus, UserRole } from "./database.types";
+import type {
+  InspectionResult,
+  MaterialOrderStatus,
+  PunchItemStatus,
+  TradePhaseStatus,
+  UserRole,
+} from "./database.types";
 
 /**
  * Shared constants for TradeFlow.
@@ -77,3 +83,52 @@ export const COMMON_TRADES = [
   "Flooring",
   "Finish Work",
 ];
+
+/* ---------------------------------------------------------------------------
+ * Sprint 2 status vocabularies + badge colors.
+ * ------------------------------------------------------------------------- */
+
+/** Ordered material-order lifecycle. */
+export const MATERIAL_ORDER_STATUSES: MaterialOrderStatus[] = [
+  "Needed",
+  "Ordered",
+  "Arriving",
+  "Received",
+  "Delayed",
+  "Cancelled",
+];
+
+export const MATERIAL_ORDER_STATUS_STYLES: Record<MaterialOrderStatus, string> = {
+  Needed: "bg-ink-100 text-ink-700",
+  Ordered: "bg-sky-100 text-sky-800",
+  Arriving: "bg-indigo-100 text-indigo-800",
+  Received: "bg-green-100 text-green-800",
+  Delayed: "bg-amber-100 text-amber-800",
+  Cancelled: "bg-ink-200 text-ink-500",
+};
+
+/** Possible inspection outcomes. */
+export const INSPECTION_RESULTS: InspectionResult[] = [
+  "Passed",
+  "Failed",
+  "Needs Rework",
+];
+
+export const INSPECTION_RESULT_STYLES: Record<InspectionResult, string> = {
+  Passed: "bg-green-100 text-green-800",
+  Failed: "bg-red-100 text-red-800",
+  "Needs Rework": "bg-amber-100 text-amber-800",
+};
+
+/** Punch-item lifecycle. */
+export const PUNCH_ITEM_STATUSES: PunchItemStatus[] = [
+  "Open",
+  "In Progress",
+  "Resolved",
+];
+
+export const PUNCH_ITEM_STATUS_STYLES: Record<PunchItemStatus, string> = {
+  Open: "bg-red-100 text-red-800",
+  "In Progress": "bg-blue-100 text-blue-800",
+  Resolved: "bg-green-100 text-green-800",
+};

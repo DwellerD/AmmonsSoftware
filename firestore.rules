@@ -44,5 +44,27 @@ service cloud.firestore {
       allow read, create: if signedIn();
       allow update, delete: if false;
     }
+
+    // Sprint 2 collections. Material orders and punch items change over their
+    // lifecycle, so they allow full read/write. Completion proof and
+    // inspections are records of what happened, so they are read + create only
+    // (no edits or deletes).
+    match /materialOrders/{orderId} {
+      allow read, write: if signedIn();
+    }
+
+    match /punchItems/{punchItemId} {
+      allow read, write: if signedIn();
+    }
+
+    match /completionRecords/{recordId} {
+      allow read, create: if signedIn();
+      allow update, delete: if false;
+    }
+
+    match /inspections/{inspectionId} {
+      allow read, create: if signedIn();
+      allow update, delete: if false;
+    }
   }
 }

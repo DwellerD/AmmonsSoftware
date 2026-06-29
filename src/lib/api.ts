@@ -9,6 +9,7 @@ import {
   query,
   serverTimestamp,
   updateDoc,
+  where,
   type DocumentData,
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
@@ -16,8 +17,15 @@ import { getDb, getFirebaseAuth } from "@/lib/firebase/client";
 import type {
   ActivityAction,
   ActivityLog,
+  CompletionRecord,
   Contractor,
+  Inspection,
+  InspectionResult,
+  MaterialOrder,
+  MaterialOrderStatus,
   Project,
+  PunchItem,
+  PunchItemStatus,
   Trade,
   TradePhase,
   TradePhaseStatus,
@@ -47,6 +55,10 @@ const COLLECTIONS = {
   trades: "trades",
   tradePhases: "tradePhases",
   activityLogs: "activityLogs",
+  materialOrders: "materialOrders",
+  completionRecords: "completionRecords",
+  inspections: "inspections",
+  punchItems: "punchItems",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -508,4 +520,340 @@ export async function listRecentActivity(limit = 10): Promise<ActivityLog[]> {
     ),
   );
   return snap.docs.map(mapActivity);
+}
+
+// ===========================================================================
+// Sprint 2: materials, completion proof, inspections, punch items.
+//
+// These collections are each scoped to one trade phase. We query by
+// trade_phase_id (an equality filter, which uses Firestore's automatic
+// single-field index) and sort in memory to avoid composite indexes.
+// ===========================================================================
+
+function mapMaterialOrder(s: Snap): MaterialOrder {
+  const d = s.data();
+  return {
+    id: s.id,
+    name: d.name,
+    supplier: d.supplier ?? null,
+    expected_arrival_date: d.expected_arrival_date ?? null,
+    actual_arrival_date: d.actual_arrival_date ?? null,
+    status: d.status as MaterialOrderStatus,
+    notes: d.notes ?? null,
+    project_id: d.project_id,
+    trade_phase_id: d.trade_phase_id ?? null,
+    trade_id: d.trade_id ?? null,
+    created_by: d.created_by ?? null,
+    created_at: toIso(d.created_at),
+    updated_at: toIso(d.updated_at),
+  };
+}
+
+function mapCompletion(s: Snap): CompletionRecord {
+  const d = s.data();
+  return {
+    id: s.id,
+    trade_phase_id: d.trade_phase_id,
+    project_id: d.project_id,
+    note: d.note ?? null,
+    photo_url: d.photo_url ?? null,
+    submitted_by: d.submitted_by ?? null,
+    created_at: toIso(d.created_at),
+  };
+}
+
+function mapInspection(s: Snap): Inspection {
+  const d = s.data();
+  return {
+    id: s.id,
+    trade_phase_id: d.trade_phase_id,
+    project_id: d.project_id,
+    result: d.result as InspectionResult,
+    notes: d.notes ?? null,
+    inspector_id: d.inspector_id ?? null,
+    created_at: toIso(d.created_at),
+  };
+}
+
+function mapPunchItem(s: Snap): PunchItem {
+  const d = s.data();
+  return {
+    id: s.id,
+    trade_phase_id: d.trade_phase_id,
+    project_id: d.project_id,
+    description: d.description,
+    status: d.status as PunchItemStatus,
+    created_by: d.created_by ?? null,
+    created_at: toIso(d.created_at),
+    updated_at: toIso(d.updated_at),
+    resolved_at: d.resolved_at ? toIso(d.resolved_at) : null,
+  };
+}
+
+/** Loads all docs in a collection for one trade phase, oldest first. */
+async function listForPhase(
+  collectionName: string,
+  tradePhaseId: string,
+): Promise<Snap[]> {
+  const snap = await getDocs(
+    query(
+      collection(getDb(), collectionName),
+      where("trade_phase_id", "==", tradePhaseId),
+    ),
+  );
+  return [...snap.docs].sort((a, b) => {
+    const at = a.data().created_at;
+    const bt = b.data().created_at;
+    const av = typeof at === "object" && at?.seconds ? at.seconds : 0;
+    const bv = typeof bt === "object" && bt?.seconds ? bt.seconds : 0;
+    return av - bv;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Material orders
+// ---------------------------------------------------------------------------
+
+export interface MaterialOrderFilters {
+  projectId?: string;
+  tradePhaseId?: string;
+  tradeId?: string;
+}
+
+/**
+ * Lists material orders, optionally filtered by project, trade phase, or trade.
+ * Fetches the collection and filters/sorts in memory (oldest first) to stay
+ * free of composite indexes, consistent with the rest of the app.
+ */
+export async function listMaterialOrders(
+  filters: MaterialOrderFilters = {},
+): Promise<MaterialOrder[]> {
+  const snap = await getDocs(collection(getDb(), COLLECTIONS.materialOrders));
+  let orders = snap.docs
+    .map(mapMaterialOrder)
+    .sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
+
+  if (filters.projectId)
+    orders = orders.filter((o) => o.project_id === filters.projectId);
+  if (filters.tradePhaseId)
+    orders = orders.filter((o) => o.trade_phase_id === filters.tradePhaseId);
+  if (filters.tradeId)
+    orders = orders.filter((o) => o.trade_id === filters.tradeId);
+
+  return orders;
+}
+
+export interface NewMaterialOrderInput {
+  project_id: string;
+  trade_phase_id?: string;
+  trade_id?: string;
+  name: string;
+  supplier?: string;
+  status: MaterialOrderStatus;
+  expected_arrival_date?: string;
+  actual_arrival_date?: string;
+  notes?: string;
+}
+
+export async function createMaterialOrder(
+  input: NewMaterialOrderInput,
+): Promise<MaterialOrder> {
+  const ref = await addDoc(collection(getDb(), COLLECTIONS.materialOrders), {
+    name: input.name,
+    supplier: input.supplier || null,
+    expected_arrival_date: input.expected_arrival_date || null,
+    actual_arrival_date: input.actual_arrival_date || null,
+    status: input.status,
+    notes: input.notes || null,
+    project_id: input.project_id,
+    trade_phase_id: input.trade_phase_id || null,
+    trade_id: input.trade_id || null,
+    created_by: uid(),
+    created_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+  });
+  const order = mapMaterialOrder((await getDoc(ref)) as Snap);
+  await logActivity({
+    action_type: "material_order_added",
+    entity_type: "material_order",
+    entity_id: order.id,
+    project_id: order.project_id,
+    description: `Material order "${order.name}" added`,
+  });
+  return order;
+}
+
+export async function updateMaterialOrderStatus(
+  id: string,
+  status: MaterialOrderStatus,
+): Promise<MaterialOrder> {
+  const ref = doc(getDb(), COLLECTIONS.materialOrders, id);
+  await updateDoc(ref, { status, updated_at: serverTimestamp() });
+  return mapMaterialOrder((await getDoc(ref)) as Snap);
+}
+
+// ---------------------------------------------------------------------------
+// Completion proof
+// ---------------------------------------------------------------------------
+
+export async function listCompletionRecords(
+  tradePhaseId: string,
+): Promise<CompletionRecord[]> {
+  const docs = await listForPhase(COLLECTIONS.completionRecords, tradePhaseId);
+  return docs.map(mapCompletion);
+}
+
+export interface NewCompletionInput {
+  trade_phase_id: string;
+  project_id: string;
+  note?: string;
+  photo_url?: string;
+}
+
+/**
+ * Records completion proof and advances the phase to "Submitted Complete"
+ * (unless it has already been approved).
+ */
+export async function createCompletionRecord(
+  input: NewCompletionInput,
+): Promise<CompletionRecord> {
+  const ref = await addDoc(collection(getDb(), COLLECTIONS.completionRecords), {
+    trade_phase_id: input.trade_phase_id,
+    project_id: input.project_id,
+    note: input.note || null,
+    photo_url: input.photo_url || null,
+    submitted_by: uid(),
+    created_at: serverTimestamp(),
+  });
+  const record = mapCompletion((await getDoc(ref)) as Snap);
+
+  // Advance the phase status unless it is already approved.
+  const phaseSnap = await getDoc(
+    doc(getDb(), COLLECTIONS.tradePhases, input.trade_phase_id),
+  );
+  if (phaseSnap.exists() && phaseSnap.data().status !== "Approved") {
+    await updateTradePhaseStatus(input.trade_phase_id, "Submitted Complete");
+  }
+
+  await logActivity({
+    action_type: "completion_submitted",
+    entity_type: "trade_phase",
+    entity_id: input.trade_phase_id,
+    project_id: input.project_id,
+    description: "Completion proof submitted",
+  });
+  return record;
+}
+
+// ---------------------------------------------------------------------------
+// Inspections (GC approval)
+// ---------------------------------------------------------------------------
+
+export async function listInspections(
+  tradePhaseId: string,
+): Promise<Inspection[]> {
+  const docs = await listForPhase(COLLECTIONS.inspections, tradePhaseId);
+  return docs.map(mapInspection);
+}
+
+export interface NewInspectionInput {
+  trade_phase_id: string;
+  project_id: string;
+  result: InspectionResult;
+  notes?: string;
+}
+
+/**
+ * Records a GC inspection. A "Passed" result approves the phase; "Failed" or
+ * "Needs Rework" moves it back to "Blocked".
+ */
+export async function createInspection(
+  input: NewInspectionInput,
+): Promise<Inspection> {
+  const ref = await addDoc(collection(getDb(), COLLECTIONS.inspections), {
+    trade_phase_id: input.trade_phase_id,
+    project_id: input.project_id,
+    result: input.result,
+    notes: input.notes || null,
+    inspector_id: uid(),
+    created_at: serverTimestamp(),
+  });
+  const inspection = mapInspection((await getDoc(ref)) as Snap);
+
+  const nextStatus: TradePhaseStatus =
+    input.result === "Passed" ? "Approved" : "Blocked";
+  await updateTradePhaseStatus(input.trade_phase_id, nextStatus);
+
+  await logActivity({
+    action_type: "inspection_recorded",
+    entity_type: "trade_phase",
+    entity_id: input.trade_phase_id,
+    project_id: input.project_id,
+    description: `Inspection recorded: ${input.result}`,
+  });
+  return inspection;
+}
+
+// ---------------------------------------------------------------------------
+// Punch items
+// ---------------------------------------------------------------------------
+
+export async function listPunchItems(
+  tradePhaseId: string,
+): Promise<PunchItem[]> {
+  const docs = await listForPhase(COLLECTIONS.punchItems, tradePhaseId);
+  return docs.map(mapPunchItem);
+}
+
+export interface NewPunchItemInput {
+  trade_phase_id: string;
+  project_id: string;
+  description: string;
+}
+
+export async function createPunchItem(
+  input: NewPunchItemInput,
+): Promise<PunchItem> {
+  const ref = await addDoc(collection(getDb(), COLLECTIONS.punchItems), {
+    trade_phase_id: input.trade_phase_id,
+    project_id: input.project_id,
+    description: input.description,
+    status: "Open" as PunchItemStatus,
+    resolved_at: null,
+    created_by: uid(),
+    created_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+  });
+  const item = mapPunchItem((await getDoc(ref)) as Snap);
+  await logActivity({
+    action_type: "punch_item_created",
+    entity_type: "punch_item",
+    entity_id: item.id,
+    project_id: item.project_id,
+    description: `Punch item added: ${item.description}`,
+  });
+  return item;
+}
+
+export async function updatePunchItemStatus(
+  id: string,
+  status: PunchItemStatus,
+): Promise<PunchItem> {
+  const ref = doc(getDb(), COLLECTIONS.punchItems, id);
+  await updateDoc(ref, {
+    status,
+    resolved_at: status === "Resolved" ? serverTimestamp() : null,
+    updated_at: serverTimestamp(),
+  });
+  const item = mapPunchItem((await getDoc(ref)) as Snap);
+  if (status === "Resolved") {
+    await logActivity({
+      action_type: "punch_item_resolved",
+      entity_type: "punch_item",
+      entity_id: item.id,
+      project_id: item.project_id,
+      description: `Punch item resolved: ${item.description}`,
+    });
+  }
+  return item;
 }

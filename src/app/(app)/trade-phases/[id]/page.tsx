@@ -16,6 +16,10 @@ import {
 import { getTradePhase, updateTradePhaseStatus } from "@/lib/api";
 import { TRADE_PHASE_STATUSES } from "@/lib/constants";
 import { formatDate } from "@/lib/format";
+import { MaterialsSection } from "@/components/phase/MaterialsSection";
+import { CompletionSection } from "@/components/phase/CompletionSection";
+import { InspectionSection } from "@/components/phase/InspectionSection";
+import { PunchItemsSection } from "@/components/phase/PunchItemsSection";
 import type {
   TradePhaseStatus,
   TradePhaseWithRelations,
@@ -24,9 +28,9 @@ import type {
 /**
  * Trade Phase detail page.
  *
- * Shows the full record and lets the GC change the status (the most common
- * action). It also reserves space for Sprint 2 features (materials, photos,
- * inspection notes, documents) without building them yet.
+ * Shows the full record and lets the GC change the status. Below the overview
+ * it surfaces the Sprint 2 workflow tools: material tracking, completion proof,
+ * GC inspection/approval, and the punch list.
  */
 export default function TradePhaseDetailPage() {
   const params = useParams<{ id: string }>();
@@ -60,6 +64,20 @@ export default function TradePhaseDetailPage() {
     }
     load();
   }, [phaseId]);
+
+  /** Re-fetch the phase without the full-page loading state (after a child
+   *  action changes its status, e.g. completion proof or an inspection). */
+  async function refreshPhase() {
+    try {
+      const data = await getTradePhase(phaseId);
+      if (data) {
+        setPhase(data);
+        setStatus(data.status);
+      }
+    } catch {
+      // Non-fatal: the section already showed its own success/failure.
+    }
+  }
 
   async function handleSaveStatus() {
     if (!phase || status === phase.status) return;
@@ -124,7 +142,7 @@ export default function TradePhaseDetailPage() {
       />
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Left: details + status control */}
+        {/* Left: details */}
         <div className="space-y-6 lg:col-span-2">
           <Card>
             <CardHeader className="flex items-center justify-between">
@@ -170,8 +188,10 @@ export default function TradePhaseDetailPage() {
               )}
             </CardBody>
           </Card>
+        </div>
 
-          {/* Status update control */}
+        {/* Right: status control */}
+        <div className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>Update status</CardTitle>
@@ -209,24 +229,30 @@ export default function TradePhaseDetailPage() {
             </CardBody>
           </Card>
         </div>
+      </div>
 
-        {/* Right: reserved Sprint 2 sections */}
-        <div className="space-y-6">
-          <FuturePlaceholder
-            title="Materials"
-            note="Track material orders, arrivals, and blockers."
+      {/* Sprint 2 workflow tools */}
+      <div className="mt-8">
+        <h2 className="mb-4 text-lg font-semibold text-ink-900">Workflow</h2>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <MaterialsSection
+            tradePhaseId={phase.id}
+            projectId={phase.project_id}
+            tradeId={phase.trade_id}
           />
-          <FuturePlaceholder
-            title="Completion Photos"
-            note="Photo proof that work is complete."
+          <PunchItemsSection
+            tradePhaseId={phase.id}
+            projectId={phase.project_id}
           />
-          <FuturePlaceholder
-            title="Inspection Notes"
-            note="Inspection results and follow-ups."
+          <CompletionSection
+            tradePhaseId={phase.id}
+            projectId={phase.project_id}
+            onSubmitted={refreshPhase}
           />
-          <FuturePlaceholder
-            title="Documents"
-            note="Drawings, change orders, and related files."
+          <InspectionSection
+            tradePhaseId={phase.id}
+            projectId={phase.project_id}
+            onRecorded={refreshPhase}
           />
         </div>
       </div>
@@ -246,22 +272,5 @@ function DetailRow({
       <span className="text-ink-500">{label}</span>
       <span className="text-right font-medium text-ink-800">{value}</span>
     </div>
-  );
-}
-
-/** A greyed-out card reserving space for a future Sprint 2 feature. */
-function FuturePlaceholder({ title, note }: { title: string; note: string }) {
-  return (
-    <Card className="border-dashed bg-ink-50/50">
-      <CardBody>
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-ink-700">{title}</h3>
-          <span className="rounded-full bg-ink-100 px-2 py-0.5 text-xs font-medium text-ink-500">
-            Coming in Sprint 2
-          </span>
-        </div>
-        <p className="mt-2 text-sm text-ink-500">{note}</p>
-      </CardBody>
-    </Card>
   );
 }
