@@ -208,6 +208,8 @@ async function main() {
     status: string;
     start: string;
     end: string;
+    confirmStatus?: string;
+    confirmNote?: string;
   }[] = [
     {
       trade: "Framing",
@@ -224,6 +226,7 @@ async function main() {
       status: "Scheduled",
       start: dateOffset(7),
       end: dateOffset(12),
+      confirmStatus: "Pending",
     },
     {
       trade: "Plumbing",
@@ -248,6 +251,8 @@ async function main() {
       status: "Ready to Schedule",
       start: dateOffset(10),
       end: dateOffset(16),
+      confirmStatus: "Declined",
+      confirmNote: "Crew is booked that week — can start the following Monday.",
     },
     {
       trade: "Drywall",
@@ -294,6 +299,8 @@ async function main() {
       status: p.status,
       scheduled_start_date: p.start,
       scheduled_end_date: p.end,
+      schedule_confirmation_status: p.confirmStatus ?? null,
+      schedule_confirmation_note: p.confirmNote ?? null,
       created_by: null,
       created_at: now(),
       updated_at: now(),
@@ -464,6 +471,7 @@ async function main() {
     status: string;
     due: string;
     resolved: boolean;
+    contractorNotes?: string;
   }[] = [
     {
       phaseIndex: 0,
@@ -484,6 +492,7 @@ async function main() {
       status: "In Progress",
       due: dateOffset(-1),
       resolved: false,
+      contractorNotes: "On site now — replacing the trap washer, done today.",
     },
     {
       phaseIndex: 7,
@@ -506,8 +515,9 @@ async function main() {
       resolved: true,
     },
   ];
+  const punchIds: string[] = [];
   for (const p of punchDefs) {
-    await db.collection("punchItems").add({
+    const ref = await db.collection("punchItems").add({
       trade_phase_id: phases[p.phaseIndex].id,
       project_id: projectId,
       title: p.title,
@@ -516,11 +526,13 @@ async function main() {
       due_date: p.due,
       priority: p.priority,
       status: p.status,
+      contractor_notes: p.contractorNotes ?? null,
       resolved_at: p.resolved ? now() : null,
       created_by: null,
       created_at: now(),
       updated_at: now(),
     });
+    punchIds.push(ref.id);
   }
 
   // 9) Recent Sprint 2 activity + notifications ------------------------------
@@ -559,6 +571,163 @@ async function main() {
     });
   }
 
+  // 10) Project documents (Document Vault) ----------------------------------
+  // No real files are uploaded here — file_url/storage_path are placeholders
+  // so the vault renders. Pinned blueprints/layouts surface on the dashboard
+  // and project detail page.
+  const documentDefs: {
+    name: string;
+    document_type: string;
+    trade: string | null;
+    contractor: string | null;
+    phaseIndex: number | null;
+    tags: string[];
+    pinned: boolean;
+  }[] = [
+    {
+      name: "Building A — Foundation Plan",
+      document_type: "Blueprint",
+      trade: "Framing",
+      contractor: null,
+      phaseIndex: 0,
+      tags: ["foundation", "building-a"],
+      pinned: true,
+    },
+    {
+      name: "Site Layout & Staging Plan",
+      document_type: "Layout",
+      trade: null,
+      contractor: null,
+      phaseIndex: null,
+      tags: ["site", "staging"],
+      pinned: true,
+    },
+    {
+      name: "Apex Framing — Subcontract Agreement",
+      document_type: "Contract",
+      trade: "Framing",
+      contractor: "Framing",
+      phaseIndex: null,
+      tags: ["contract", "framing"],
+      pinned: false,
+    },
+    {
+      name: "ClearFlow Plumbing — Invoice #1042",
+      document_type: "Invoice",
+      trade: "Plumbing",
+      contractor: "Plumbing",
+      phaseIndex: 2,
+      tags: ["invoice", "plumbing"],
+      pinned: false,
+    },
+    {
+      name: "CO-03 — Added bath in Unit 110",
+      document_type: "Change Order",
+      trade: "Plumbing",
+      contractor: null,
+      phaseIndex: null,
+      tags: ["change-order", "unit-110"],
+      pinned: false,
+    },
+    {
+      name: "Building Permit — BLD-2024-118",
+      document_type: "Permit",
+      trade: null,
+      contractor: null,
+      phaseIndex: null,
+      tags: ["permit"],
+      pinned: false,
+    },
+  ];
+  for (const d of documentDefs) {
+    const fileName = `${d.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.pdf`;
+    await db.collection("documents").add({
+      name: d.name,
+      document_type: d.document_type,
+      project_id: projectId,
+      trade_id: d.trade ? tradeIdByName.get(d.trade) ?? null : null,
+      trade_phase_id: d.phaseIndex != null ? phases[d.phaseIndex].id : null,
+      contractor_id: contractorFor(d.contractor),
+      punch_item_id: null,
+      file_url: `https://example.com/demo/${fileName}`,
+      storage_path: `documents/${projectId}/${fileName}`,
+      uploaded_by: null,
+      tags: d.tags,
+      pinned: d.pinned,
+      created_at: now(),
+      updated_at: now(),
+    });
+  }
+
+  // 11) Contractor action links (lightweight, tokenized) --------------------
+  // The token doubles as the document id so an unauthenticated contractor can
+  // fetch exactly one link by URL. These examples power the schedule
+  // confirmation and punch update flows.
+  const scheduleConfirmToken = "demo-confirm-bldgb-roof";
+  const punchUpdateToken = "demo-punch-unit103-leak";
+  const usedConfirmToken = "demo-confirm-ductwork-used";
+
+  const actionLinkDefs: {
+    token: string;
+    action_type: string;
+    related_entity_type: string;
+    related_entity_id: string;
+    contractor: string | null;
+    status: string;
+    expiresInDays: number | null;
+    used: boolean;
+  }[] = [
+    {
+      token: scheduleConfirmToken,
+      action_type: "Schedule Confirmation",
+      related_entity_type: "trade_phase",
+      related_entity_id: phases[1].id,
+      contractor: "Framing",
+      status: "Active",
+      expiresInDays: 14,
+      used: false,
+    },
+    {
+      token: punchUpdateToken,
+      action_type: "Punch Item Update",
+      related_entity_type: "punch_item",
+      related_entity_id: punchIds[1],
+      contractor: "Plumbing",
+      status: "Active",
+      expiresInDays: 14,
+      used: false,
+    },
+    {
+      token: usedConfirmToken,
+      action_type: "Schedule Confirmation",
+      related_entity_type: "trade_phase",
+      related_entity_id: phases[4].id,
+      contractor: "HVAC",
+      status: "Used",
+      expiresInDays: 14,
+      used: true,
+    },
+  ];
+  for (const l of actionLinkDefs) {
+    await db
+      .collection("contractorActionLinks")
+      .doc(l.token)
+      .set({
+        token: l.token,
+        action_type: l.action_type,
+        related_entity_type: l.related_entity_type,
+        related_entity_id: l.related_entity_id,
+        contractor_id: contractorFor(l.contractor),
+        project_id: projectId,
+        expiration_date:
+          l.expiresInDays != null ? dateOffset(l.expiresInDays) : null,
+        used_at: l.used ? now() : null,
+        status: l.status,
+        created_at: now(),
+        updated_at: now(),
+      });
+  }
+
   const notificationDefs = [
     {
       recipient_id: null,
@@ -566,13 +735,17 @@ async function main() {
       related_entity_type: "completion_record",
       related_entity_id: phases[6].id,
       message: "Completion proof was submitted for review.",
+      action_link_token: null,
+      email_status: null,
     },
     {
       recipient_id: contractorFor("Plumbing"),
       notification_type: "punch_item_assigned",
       related_entity_type: "punch_item",
-      related_entity_id: phases[8].id,
+      related_entity_id: punchIds[1],
       message: "New punch item assigned: Leak at unit 103 sink trap",
+      action_link_token: punchUpdateToken,
+      email_status: "skipped",
     },
     {
       recipient_id: null,
@@ -580,6 +753,47 @@ async function main() {
       related_entity_type: "material_order",
       related_entity_id: phases[3].id,
       message: 'Material order "200A electrical panel" is delayed.',
+      action_link_token: null,
+      email_status: null,
+    },
+    {
+      recipient_id: contractorFor("Framing"),
+      notification_type: "schedule_confirmation_requested",
+      related_entity_type: "trade_phase",
+      related_entity_id: phases[1].id,
+      message:
+        'Please confirm the schedule for "Building B — roof framing".',
+      action_link_token: scheduleConfirmToken,
+      email_status: "skipped",
+    },
+    {
+      recipient_id: null,
+      notification_type: "schedule_confirmation_declined",
+      related_entity_type: "trade_phase",
+      related_entity_id: phases[4].id,
+      message:
+        'Summit HVAC declined the scheduled date for "Building A — ductwork".',
+      action_link_token: null,
+      email_status: "skipped",
+    },
+    {
+      recipient_id: null,
+      notification_type: "completion_approved",
+      related_entity_type: "trade_phase",
+      related_entity_id: phases[8].id,
+      message: 'Completion approved for "Units 101-110 — fixture set".',
+      action_link_token: null,
+      email_status: "skipped",
+    },
+    {
+      recipient_id: null,
+      notification_type: "completion_rejected",
+      related_entity_type: "trade_phase",
+      related_entity_id: phases[7].id,
+      message:
+        'Completion needs fixes for "Units 101-110 — LVP flooring". 1 open punch item to address.',
+      action_link_token: null,
+      email_status: "skipped",
     },
   ];
   for (const n of notificationDefs) {
@@ -598,6 +812,8 @@ async function main() {
   console.log(`  • ${materialDefs.length} material orders`);
   console.log(`  • 2 completion submissions`);
   console.log(`  • ${punchDefs.length} punch items`);
+  console.log(`  • ${documentDefs.length} project documents`);
+  console.log(`  • ${actionLinkDefs.length} contractor action links`);
   console.log(`  • ${notificationDefs.length} notifications`);
 }
 
