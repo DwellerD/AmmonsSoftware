@@ -8,9 +8,11 @@ import { ErrorAlert, Spinner } from "@/components/ui/States";
 import {
   createCompletionRecord,
   listCompletionRecords,
+  listPunchItems,
   reviewCompletion,
   uploadCompletionPhotos,
 } from "@/lib/api";
+import { dispatchNotification } from "@/lib/notifications";
 import { COMPLETION_STATUS_STYLES } from "@/lib/constants";
 import { formatDate, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/cn";
@@ -30,10 +32,12 @@ const MAX_PHOTOS = 8;
 export function CompletionSection({
   tradePhaseId,
   projectId,
+  phaseTitle,
   onSubmitted,
 }: {
   tradePhaseId: string;
   projectId: string;
+  phaseTitle?: string;
   /** Called after a successful submission so the parent can refresh status. */
   onSubmitted?: () => void;
 }) {
@@ -105,6 +109,14 @@ export function CompletionSection({
         decision: "approve",
       });
       setRecords((prev) => prev.map((r) => (r.id === record.id ? updated : r)));
+      // Notify the contractor that their submission was approved.
+      await dispatchNotification({
+        recipientId: record.submitted_by,
+        type: "completion_approved",
+        relatedEntityType: "trade_phase",
+        relatedEntityId: tradePhaseId,
+        context: { subject: phaseTitle ?? "this phase" },
+      });
       onSubmitted?.();
     } catch (err) {
       setReviewError(
@@ -130,6 +142,28 @@ export function CompletionSection({
         notes: rejectNotes.trim(),
       });
       setRecords((prev) => prev.map((r) => (r.id === record.id ? updated : r)));
+      // Build the rejection detail: review notes plus any related punch items.
+      let detail = rejectNotes.trim();
+      try {
+        const punch = await listPunchItems(tradePhaseId);
+        const openPunch = punch.filter(
+          (p) => p.status !== "Resolved" && p.status !== "Closed",
+        );
+        if (openPunch.length > 0) {
+          detail += ` ${openPunch.length} open punch item${
+            openPunch.length === 1 ? "" : "s"
+          } to address.`;
+        }
+      } catch {
+        // Punch lookup is best-effort; the notification still goes out.
+      }
+      await dispatchNotification({
+        recipientId: record.submitted_by,
+        type: "completion_rejected",
+        relatedEntityType: "trade_phase",
+        relatedEntityId: tradePhaseId,
+        context: { subject: phaseTitle ?? "this phase", detail },
+      });
       setRejectingId(null);
       setRejectNotes("");
       onSubmitted?.();

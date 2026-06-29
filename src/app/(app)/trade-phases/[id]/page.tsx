@@ -257,6 +257,7 @@ export default function TradePhaseDetailPage() {
           <CompletionSection
             tradePhaseId={phase.id}
             projectId={phase.project_id}
+            phaseTitle={phase.title}
             onSubmitted={refreshPhase}
           />
           <PunchItemsSection
