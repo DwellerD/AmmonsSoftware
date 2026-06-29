@@ -32,6 +32,7 @@ import type {
   Project,
   PunchItem,
   PunchItemStatus,
+  PunchPriority,
   Trade,
   TradePhase,
   TradePhaseStatus,
@@ -593,7 +594,11 @@ function mapPunchItem(s: Snap): PunchItem {
     id: s.id,
     trade_phase_id: d.trade_phase_id,
     project_id: d.project_id,
-    description: d.description,
+    title: d.title ?? d.description ?? "",
+    description: d.description ?? null,
+    assigned_contractor_id: d.assigned_contractor_id ?? null,
+    due_date: d.due_date ?? null,
+    priority: (d.priority ?? "Medium") as PunchPriority,
     status: d.status as PunchItemStatus,
     created_by: d.created_by ?? null,
     created_at: toIso(d.created_at),
@@ -912,21 +917,56 @@ export async function listPunchItems(
   return docs.map(mapPunchItem);
 }
 
+export interface PunchItemFilters {
+  projectId?: string;
+  status?: PunchItemStatus;
+  contractorId?: string;
+}
+
+/** Lists every punch item across all phases, newest first, with filters. */
+export async function listAllPunchItems(
+  filters: PunchItemFilters = {},
+): Promise<PunchItem[]> {
+  const snap = await getDocs(collection(getDb(), COLLECTIONS.punchItems));
+  let items = snap.docs
+    .map(mapPunchItem)
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+
+  if (filters.projectId)
+    items = items.filter((i) => i.project_id === filters.projectId);
+  if (filters.status) items = items.filter((i) => i.status === filters.status);
+  if (filters.contractorId)
+    items = items.filter((i) => i.assigned_contractor_id === filters.contractorId);
+
+  return items;
+}
+
 export interface NewPunchItemInput {
   trade_phase_id: string;
   project_id: string;
-  description: string;
+  title: string;
+  description?: string;
+  assigned_contractor_id?: string;
+  due_date?: string;
+  priority?: PunchPriority;
+  status?: PunchItemStatus;
 }
 
 export async function createPunchItem(
   input: NewPunchItemInput,
 ): Promise<PunchItem> {
+  const status = input.status ?? "Open";
   const ref = await addDoc(collection(getDb(), COLLECTIONS.punchItems), {
     trade_phase_id: input.trade_phase_id,
     project_id: input.project_id,
-    description: input.description,
-    status: "Open" as PunchItemStatus,
-    resolved_at: null,
+    title: input.title,
+    description: input.description || null,
+    assigned_contractor_id: input.assigned_contractor_id || null,
+    due_date: input.due_date || null,
+    priority: input.priority ?? "Medium",
+    status,
+    resolved_at:
+      status === "Resolved" || status === "Closed" ? serverTimestamp() : null,
     created_by: uid(),
     created_at: serverTimestamp(),
     updated_at: serverTimestamp(),
@@ -937,7 +977,7 @@ export async function createPunchItem(
     entity_type: "punch_item",
     entity_id: item.id,
     project_id: item.project_id,
-    description: `Punch item added: ${item.description}`,
+    description: `Punch item added: ${item.title}`,
   });
   return item;
 }
@@ -947,9 +987,10 @@ export async function updatePunchItemStatus(
   status: PunchItemStatus,
 ): Promise<PunchItem> {
   const ref = doc(getDb(), COLLECTIONS.punchItems, id);
+  const resolving = status === "Resolved" || status === "Closed";
   await updateDoc(ref, {
     status,
-    resolved_at: status === "Resolved" ? serverTimestamp() : null,
+    resolved_at: resolving ? serverTimestamp() : null,
     updated_at: serverTimestamp(),
   });
   const item = mapPunchItem((await getDoc(ref)) as Snap);
@@ -959,7 +1000,7 @@ export async function updatePunchItemStatus(
       entity_type: "punch_item",
       entity_id: item.id,
       project_id: item.project_id,
-      description: `Punch item resolved: ${item.description}`,
+      description: `Punch item resolved: ${item.title}`,
     });
   }
   return item;

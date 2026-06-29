@@ -46,7 +46,9 @@ export function PunchItemsSection({
     load();
   }, [tradePhaseId]);
 
-  const openCount = items.filter((i) => i.status !== "Resolved").length;
+  const openCount = items.filter(
+    (i) => i.status !== "Resolved" && i.status !== "Closed",
+  ).length;
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -60,7 +62,7 @@ export function PunchItemsSection({
       const created = await createPunchItem({
         trade_phase_id: tradePhaseId,
         project_id: projectId,
-        description: description.trim(),
+        title: description.trim(),
       });
       setItems((prev) => [...prev, created]);
       setDescription("");
@@ -112,7 +114,7 @@ export function PunchItemsSection({
                       : "text-ink-800",
                   )}
                 >
-                  {i.description}
+                  {i.title}
                 </p>
                 <Select
                   value={i.status}

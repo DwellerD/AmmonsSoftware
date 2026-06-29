@@ -3,6 +3,7 @@ import type {
   InspectionResult,
   MaterialOrderStatus,
   PunchItemStatus,
+  PunchPriority,
   TradePhaseStatus,
   UserRole,
 } from "./database.types";
@@ -141,10 +142,27 @@ export const PUNCH_ITEM_STATUSES: PunchItemStatus[] = [
   "Open",
   "In Progress",
   "Resolved",
+  "Closed",
 ];
 
 export const PUNCH_ITEM_STATUS_STYLES: Record<PunchItemStatus, string> = {
   Open: "bg-red-100 text-red-800",
   "In Progress": "bg-blue-100 text-blue-800",
   Resolved: "bg-green-100 text-green-800",
+  Closed: "bg-ink-200 text-ink-600",
+};
+
+/** Punch-item priority levels, ordered low → critical. */
+export const PUNCH_PRIORITIES: PunchPriority[] = [
+  "Low",
+  "Medium",
+  "High",
+  "Critical",
+];
+
+export const PUNCH_PRIORITY_STYLES: Record<PunchPriority, string> = {
+  Low: "bg-ink-100 text-ink-700",
+  Medium: "bg-sky-100 text-sky-800",
+  High: "bg-amber-100 text-amber-800",
+  Critical: "bg-red-100 text-red-800",
 };

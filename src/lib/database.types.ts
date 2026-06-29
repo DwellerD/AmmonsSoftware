@@ -55,7 +55,10 @@ export type CompletionStatus =
   | "Needs Fix";
 
 /** Lifecycle of a punch-list item (a defect or fix to close out). */
-export type PunchItemStatus = "Open" | "In Progress" | "Resolved";
+export type PunchItemStatus = "Open" | "In Progress" | "Resolved" | "Closed";
+
+/** Priority/severity of a punch-list item. */
+export type PunchPriority = "Low" | "Medium" | "High" | "Critical";
 
 /** A user account profile, linked 1:1 with a Firebase auth user. */
 export interface Profile {
@@ -205,7 +208,11 @@ export interface PunchItem {
   id: string;
   trade_phase_id: string;
   project_id: string;
-  description: string;
+  title: string;
+  description: string | null;
+  assigned_contractor_id: string | null;
+  due_date: string | null;
+  priority: PunchPriority;
   status: PunchItemStatus;
   created_by: string | null;
   created_at: string;
