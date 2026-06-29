@@ -29,6 +29,9 @@ import type {
   InspectionResult,
   MaterialOrder,
   MaterialOrderStatus,
+  Notification,
+  NotificationStatus,
+  NotificationType,
   Project,
   PunchItem,
   PunchItemStatus,
@@ -66,6 +69,7 @@ const COLLECTIONS = {
   completionRecords: "completionRecords",
   inspections: "inspections",
   punchItems: "punchItems",
+  notifications: "notifications",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -714,6 +718,15 @@ export async function updateMaterialOrderStatus(
     project_id: order.project_id,
     description: `Material order "${order.name}" marked ${status}`,
   });
+  // Flag delayed deliveries so the GC can react.
+  if (status === "Delayed") {
+    await createNotification({
+      notification_type: "material_delayed",
+      related_entity_type: "material_order",
+      related_entity_id: order.id,
+      message: `Material order "${order.name}" is delayed.`,
+    });
+  }
   return order;
 }
 
@@ -794,6 +807,12 @@ export async function createCompletionRecord(
     entity_id: input.trade_phase_id,
     project_id: input.project_id,
     description: "Completion proof submitted",
+  });
+  await createNotification({
+    notification_type: "completion_submitted",
+    related_entity_type: "completion_record",
+    related_entity_id: record.id,
+    message: "Completion proof was submitted for review.",
   });
   return record;
 }
@@ -979,6 +998,16 @@ export async function createPunchItem(
     project_id: item.project_id,
     description: `Punch item added: ${item.title}`,
   });
+  // Let the assigned contractor know they have a new item.
+  if (item.assigned_contractor_id) {
+    await createNotification({
+      recipient_id: item.assigned_contractor_id,
+      notification_type: "punch_item_assigned",
+      related_entity_type: "punch_item",
+      related_entity_id: item.id,
+      message: `New punch item assigned: ${item.title}`,
+    });
+  }
   return item;
 }
 
@@ -1004,4 +1033,63 @@ export async function updatePunchItemStatus(
     });
   }
   return item;
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+//
+// Sprint 2 does not send real SMS/email/push. We record what *would* be sent
+// so the workflow can be built and demoed. The records are visible on the
+// /notifications screen for development and testing.
+// ---------------------------------------------------------------------------
+
+function mapNotification(s: Snap): Notification {
+  const d = s.data();
+  return {
+    id: s.id,
+    recipient_id: d.recipient_id ?? null,
+    notification_type: d.notification_type as NotificationType,
+    related_entity_type: d.related_entity_type,
+    related_entity_id: d.related_entity_id,
+    message: d.message,
+    status: (d.status ?? "unread") as NotificationStatus,
+    created_at: toIso(d.created_at),
+  };
+}
+
+export interface NewNotificationInput {
+  recipient_id?: string | null;
+  notification_type: NotificationType;
+  related_entity_type: string;
+  related_entity_id: string;
+  message: string;
+}
+
+export async function createNotification(
+  input: NewNotificationInput,
+): Promise<Notification> {
+  const ref = await addDoc(collection(getDb(), COLLECTIONS.notifications), {
+    recipient_id: input.recipient_id ?? null,
+    notification_type: input.notification_type,
+    related_entity_type: input.related_entity_type,
+    related_entity_id: input.related_entity_id,
+    message: input.message,
+    status: "unread" as NotificationStatus,
+    created_at: serverTimestamp(),
+  });
+  return mapNotification((await getDoc(ref)) as Snap);
+}
+
+/** Lists all notification records, newest first. */
+export async function listNotifications(): Promise<Notification[]> {
+  const snap = await getDocs(collection(getDb(), COLLECTIONS.notifications));
+  return snap.docs
+    .map(mapNotification)
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+}
+
+export async function markNotificationRead(id: string): Promise<void> {
+  await updateDoc(doc(getDb(), COLLECTIONS.notifications, id), {
+    status: "read" as NotificationStatus,
+  });
 }

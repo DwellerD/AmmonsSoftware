@@ -219,3 +219,29 @@ export interface PunchItem {
   updated_at: string;
   resolved_at: string | null;
 }
+
+/** Kinds of in-app notification we record for Sprint 2 events. */
+export type NotificationType =
+  | "completion_submitted"
+  | "punch_item_assigned"
+  | "material_delayed";
+
+/** Read state of a notification record. */
+export type NotificationStatus = "unread" | "read";
+
+/**
+ * An in-app notification record. Sprint 2 does not send real SMS/email/push;
+ * these records simply capture what *would* be sent, so the workflow can be
+ * built and tested. Recipient may be a user or contractor id (or null for a
+ * broadcast to whoever is managing the project).
+ */
+export interface Notification {
+  id: string;
+  recipient_id: string | null;
+  notification_type: NotificationType;
+  related_entity_type: string;
+  related_entity_id: string;
+  message: string;
+  status: NotificationStatus;
+  created_at: string;
+}

@@ -69,5 +69,12 @@ service cloud.firestore {
       allow read, create: if signedIn();
       allow update, delete: if false;
     }
+
+    // Notification records (in-app only for Sprint 2). Signed-in users can read
+    // and create them, and update to flip the read status. Deletes are blocked.
+    match /notifications/{notificationId} {
+      allow read, create, update: if signedIn();
+      allow delete: if false;
+    }
   }
 }

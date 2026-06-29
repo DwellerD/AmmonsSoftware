@@ -41,6 +41,9 @@ const icons = {
   punch: (
     <path d="M9 11l3 3 8-8 1.5 1.5L12 17l-4.5-4.5L9 11ZM4 4h8v2H4V4Zm0 5h6v2H4V9Zm0 5h6v2H4v-2Zm0 5h10v2H4v-2Z" />
   ),
+  notifications: (
+    <path d="M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2Zm6-6V11a6 6 0 0 0-4-5.65V5a2 2 0 1 0-4 0v.35A6 6 0 0 0 6 11v5l-2 2v1h16v-1l-2-2Z" />
+  ),
 };
 
 const NAV_ITEMS: NavItem[] = [
@@ -70,6 +73,11 @@ const NAV_ITEMS: NavItem[] = [
     label: "Punch List",
     href: "/punch-items",
     icon: <Icon>{icons.punch}</Icon>,
+  },
+  {
+    label: "Notifications",
+    href: "/notifications",
+    icon: <Icon>{icons.notifications}</Icon>,
   },
 ];
 

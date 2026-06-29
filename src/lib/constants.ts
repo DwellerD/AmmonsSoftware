@@ -2,6 +2,7 @@ import type {
   CompletionStatus,
   InspectionResult,
   MaterialOrderStatus,
+  NotificationType,
   PunchItemStatus,
   PunchPriority,
   TradePhaseStatus,
@@ -165,4 +166,17 @@ export const PUNCH_PRIORITY_STYLES: Record<PunchPriority, string> = {
   Medium: "bg-sky-100 text-sky-800",
   High: "bg-amber-100 text-amber-800",
   Critical: "bg-red-100 text-red-800",
+};
+
+/** Friendly labels for each notification type. */
+export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
+  completion_submitted: "Completion submitted",
+  punch_item_assigned: "Punch item assigned",
+  material_delayed: "Material delayed",
+};
+
+export const NOTIFICATION_TYPE_STYLES: Record<NotificationType, string> = {
+  completion_submitted: "bg-violet-100 text-violet-800",
+  punch_item_assigned: "bg-sky-100 text-sky-800",
+  material_delayed: "bg-amber-100 text-amber-800",
 };
