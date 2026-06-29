@@ -18,7 +18,6 @@ import { TRADE_PHASE_STATUSES } from "@/lib/constants";
 import { formatDate } from "@/lib/format";
 import { MaterialsSection } from "@/components/phase/MaterialsSection";
 import { CompletionSection } from "@/components/phase/CompletionSection";
-import { InspectionSection } from "@/components/phase/InspectionSection";
 import { PunchItemsSection } from "@/components/phase/PunchItemsSection";
 import type {
   TradePhaseStatus,
@@ -242,19 +241,14 @@ export default function TradePhaseDetailPage() {
             phaseStatus={phase.status}
             onPhaseStatusChange={refreshPhase}
           />
-          <PunchItemsSection
-            tradePhaseId={phase.id}
-            projectId={phase.project_id}
-          />
           <CompletionSection
             tradePhaseId={phase.id}
             projectId={phase.project_id}
             onSubmitted={refreshPhase}
           />
-          <InspectionSection
+          <PunchItemsSection
             tradePhaseId={phase.id}
             projectId={phase.project_id}
-            onRecorded={refreshPhase}
           />
         </div>
       </div>

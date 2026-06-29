@@ -793,6 +793,65 @@ export async function createCompletionRecord(
   return record;
 }
 
+export interface ReviewCompletionInput {
+  trade_phase_id: string;
+  project_id: string;
+  decision: "approve" | "reject";
+  /** Required for a rejection: what the contractor needs to fix. */
+  notes?: string;
+}
+
+/**
+ * GC review of a completion submission. Approving marks the submission and the
+ * phase "Approved"; rejecting marks the submission "Needs Fix" and moves the
+ * phase back to "In Progress". Either way an inspection record is written for
+ * the audit trail and an activity entry is logged.
+ */
+export async function reviewCompletion(
+  recordId: string,
+  input: ReviewCompletionInput,
+): Promise<CompletionRecord> {
+  const approved = input.decision === "approve";
+  const status: CompletionStatus = approved ? "Approved" : "Needs Fix";
+
+  const ref = doc(getDb(), COLLECTIONS.completionRecords, recordId);
+  await updateDoc(ref, {
+    status,
+    review_notes: input.notes || null,
+    reviewed_by: uid(),
+    reviewed_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+  });
+  const record = mapCompletion((await getDoc(ref)) as Snap);
+
+  // Approved work is done; rejected work goes back for fixes.
+  await updateTradePhaseStatus(
+    input.trade_phase_id,
+    approved ? "Approved" : "In Progress",
+  );
+
+  // Record the inspection outcome for the audit trail.
+  await addDoc(collection(getDb(), COLLECTIONS.inspections), {
+    trade_phase_id: input.trade_phase_id,
+    project_id: input.project_id,
+    result: approved ? "Passed" : "Needs Rework",
+    notes: input.notes || null,
+    inspector_id: uid(),
+    created_at: serverTimestamp(),
+  });
+
+  await logActivity({
+    action_type: "inspection_recorded",
+    entity_type: "trade_phase",
+    entity_id: input.trade_phase_id,
+    project_id: input.project_id,
+    description: approved
+      ? "Completion approved"
+      : "Completion rejected — needs fix",
+  });
+  return record;
+}
+
 // ---------------------------------------------------------------------------
 // Inspections (GC approval)
 // ---------------------------------------------------------------------------

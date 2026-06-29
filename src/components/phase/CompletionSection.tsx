@@ -8,11 +8,13 @@ import { ErrorAlert, Spinner } from "@/components/ui/States";
 import {
   createCompletionRecord,
   listCompletionRecords,
+  reviewCompletion,
   uploadCompletionPhotos,
 } from "@/lib/api";
 import { COMPLETION_STATUS_STYLES } from "@/lib/constants";
 import { formatDate, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { useAuth } from "@/components/providers/AuthProvider";
 import type { CompletionRecord } from "@/lib/database.types";
 
 const MAX_PHOTOS = 8;
@@ -38,6 +40,13 @@ export function CompletionSection({
   const [records, setRecords] = useState<CompletionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const { canManage } = useAuth();
+  // GC review state (per-record).
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectNotes, setRejectNotes] = useState("");
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   const [note, setNote] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -84,6 +93,53 @@ export function CompletionSection({
     previews.forEach((url) => URL.revokeObjectURL(url));
     setFiles(next);
     setPreviews(next.map((f) => URL.createObjectURL(f)));
+  }
+
+  async function approveRecord(record: CompletionRecord) {
+    setReviewError(null);
+    setReviewingId(record.id);
+    try {
+      const updated = await reviewCompletion(record.id, {
+        trade_phase_id: tradePhaseId,
+        project_id: projectId,
+        decision: "approve",
+      });
+      setRecords((prev) => prev.map((r) => (r.id === record.id ? updated : r)));
+      onSubmitted?.();
+    } catch (err) {
+      setReviewError(
+        err instanceof Error ? err.message : "Failed to approve completion.",
+      );
+    } finally {
+      setReviewingId(null);
+    }
+  }
+
+  async function rejectRecord(record: CompletionRecord) {
+    if (!rejectNotes.trim()) {
+      setReviewError("Add a note describing what needs to be fixed.");
+      return;
+    }
+    setReviewError(null);
+    setReviewingId(record.id);
+    try {
+      const updated = await reviewCompletion(record.id, {
+        trade_phase_id: tradePhaseId,
+        project_id: projectId,
+        decision: "reject",
+        notes: rejectNotes.trim(),
+      });
+      setRecords((prev) => prev.map((r) => (r.id === record.id ? updated : r)));
+      setRejectingId(null);
+      setRejectNotes("");
+      onSubmitted?.();
+    } catch (err) {
+      setReviewError(
+        err instanceof Error ? err.message : "Failed to reject completion.",
+      );
+    } finally {
+      setReviewingId(null);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -199,6 +255,64 @@ export function CompletionSection({
                     <p className="mt-0.5 whitespace-pre-wrap text-sm text-amber-900">
                       {r.review_notes}
                     </p>
+                  </div>
+                )}
+
+                {canManage && r.status === "Submitted" && (
+                  <div className="mt-3 border-t border-ink-100 pt-3">
+                    {rejectingId === r.id ? (
+                      <div className="space-y-2">
+                        <Textarea
+                          value={rejectNotes}
+                          onChange={(e) => setRejectNotes(e.target.value)}
+                          placeholder="What needs to be fixed?"
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            loading={reviewingId === r.id}
+                            onClick={() => rejectRecord(r)}
+                          >
+                            Send back — needs fix
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setRejectingId(null);
+                              setRejectNotes("");
+                              setReviewError(null);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          loading={reviewingId === r.id}
+                          onClick={() => approveRecord(r)}
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setRejectingId(r.id);
+                            setReviewError(null);
+                          }}
+                        >
+                          Reject / needs fix
+                        </Button>
+                      </div>
+                    )}
+                    {reviewError && reviewingId === null && (
+                      <p className="mt-2 text-xs text-red-600">{reviewError}</p>
+                    )}
                   </div>
                 )}
               </li>
