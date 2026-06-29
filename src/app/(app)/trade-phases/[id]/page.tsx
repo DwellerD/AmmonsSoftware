@@ -19,6 +19,7 @@ import { formatDate } from "@/lib/format";
 import { MaterialsSection } from "@/components/phase/MaterialsSection";
 import { CompletionSection } from "@/components/phase/CompletionSection";
 import { PunchItemsSection } from "@/components/phase/PunchItemsSection";
+import { PhaseDocumentsSection } from "@/components/phase/PhaseDocumentsSection";
 import type {
   TradePhaseStatus,
   TradePhaseWithRelations,
@@ -249,6 +250,11 @@ export default function TradePhaseDetailPage() {
           <PunchItemsSection
             tradePhaseId={phase.id}
             projectId={phase.project_id}
+          />
+          <PhaseDocumentsSection
+            tradePhaseId={phase.id}
+            projectId={phase.project_id}
+            tradeId={phase.trade_id}
           />
         </div>
       </div>
