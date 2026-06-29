@@ -60,7 +60,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     label: "Materials",
-    href: "/material-orders/new",
+    href: "/material-orders",
     icon: <Icon>{icons.materials}</Icon>,
   },
 ];
