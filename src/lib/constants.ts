@@ -1,0 +1,79 @@
+import type { TradePhaseStatus, UserRole } from "./database.types";
+
+/**
+ * Shared constants for TradeFlow.
+ * Keeping these in one place makes the app easy to reason about and avoids
+ * "magic strings" scattered through the codebase.
+ */
+
+/** All user roles, with friendly labels for display. */
+export const USER_ROLES: { value: UserRole; label: string }[] = [
+  { value: "admin", label: "Admin" },
+  { value: "gc_site_super", label: "GC / Site Super" },
+  { value: "internal_team", label: "Internal Team" },
+  { value: "contractor", label: "Contractor" },
+];
+
+/** The default role new users receive when they first sign up. */
+export const DEFAULT_ROLE: UserRole = "gc_site_super";
+
+/**
+ * Roles that are allowed full management access in Sprint 1.
+ * Contractors are intentionally excluded from admin-style actions.
+ */
+export const MANAGER_ROLES: UserRole[] = [
+  "admin",
+  "gc_site_super",
+  "internal_team",
+];
+
+/** Returns true if a role can manage projects, trades, contractors, phases. */
+export function canManage(role: UserRole | null | undefined): boolean {
+  return role != null && MANAGER_ROLES.includes(role);
+}
+
+/** Ordered list of trade phase statuses (matches the workflow lifecycle). */
+export const TRADE_PHASE_STATUSES: TradePhaseStatus[] = [
+  "Not Ready",
+  "Materials Pending",
+  "Ready to Schedule",
+  "Scheduled",
+  "In Progress",
+  "Submitted Complete",
+  "Needs Inspection",
+  "Approved",
+  "Blocked",
+];
+
+/**
+ * Tailwind color classes for each status badge.
+ * Centralizing this keeps status colors consistent across every screen.
+ */
+export const STATUS_STYLES: Record<TradePhaseStatus, string> = {
+  "Not Ready": "bg-ink-100 text-ink-700",
+  "Materials Pending": "bg-amber-100 text-amber-800",
+  "Ready to Schedule": "bg-sky-100 text-sky-800",
+  Scheduled: "bg-indigo-100 text-indigo-800",
+  "In Progress": "bg-blue-100 text-blue-800",
+  "Submitted Complete": "bg-violet-100 text-violet-800",
+  "Needs Inspection": "bg-orange-100 text-orange-800",
+  Approved: "bg-green-100 text-green-800",
+  Blocked: "bg-red-100 text-red-800",
+};
+
+/** Statuses considered "active" (work that is not yet approved). */
+export const ACTIVE_STATUSES: TradePhaseStatus[] = TRADE_PHASE_STATUSES.filter(
+  (s) => s !== "Approved",
+);
+
+/** Example trade names, used as quick-pick suggestions in the UI. */
+export const COMMON_TRADES = [
+  "Framing",
+  "Plumbing",
+  "Electrical",
+  "HVAC",
+  "Drywall",
+  "Paint",
+  "Flooring",
+  "Finish Work",
+];

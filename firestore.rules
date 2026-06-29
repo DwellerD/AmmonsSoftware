@@ -1,0 +1,48 @@
+rules_version = '2';
+
+// Firestore security rules for TradeFlow.
+//
+// This is an MVP ruleset: any signed-in user can read and write the shared
+// project data. Tighten these before a production launch (e.g. per-project
+// membership, role checks, field validation).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // True when the request is made by an authenticated user.
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // User profile documents are keyed by the auth uid.
+    // Anyone signed in can read profiles (to show names/roles); a user may
+    // only create or modify their own profile document.
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow write: if signedIn() && request.auth.uid == userId;
+    }
+
+    // Core shared collections: readable and writable by any signed-in user.
+    match /projects/{projectId} {
+      allow read, write: if signedIn();
+    }
+
+    match /contractors/{contractorId} {
+      allow read, write: if signedIn();
+    }
+
+    match /trades/{tradeId} {
+      allow read, write: if signedIn();
+    }
+
+    match /tradePhases/{phaseId} {
+      allow read, write: if signedIn();
+    }
+
+    // Activity logs are an append-only audit trail: signed-in users can read
+    // and create entries, but not edit or delete existing ones.
+    match /activityLogs/{logId} {
+      allow read, create: if signedIn();
+      allow update, delete: if false;
+    }
+  }
+}
