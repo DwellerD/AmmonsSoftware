@@ -4,12 +4,14 @@
 > supervisors.
 
 TradeFlow helps a GC manage **trade readiness, material tracking, contractor
-scheduling, completion proof, inspection approvals, punch lists, and daily
-project visibility** — all from their phone or desktop.
+scheduling, completion proof, inspection approvals, punch lists, a document
+vault, lightweight contractor action links, and daily project visibility** —
+all from their phone or desktop.
 
-This repository contains the **Sprint 2** build (material tracking, completion
-proof, GC inspection approvals, and punch items) on top of the Sprint 1
-foundation.
+This repository contains the **Sprint 3** build (a document vault, tokenized
+contractor action links for schedule confirmations and punch updates, and a
+real notification workflow structure) on top of the Sprint 1 and Sprint 2
+foundations.
 
 ---
 
@@ -26,8 +28,9 @@ GC can start each day with a clear overview and keep every piece of work moving.
 - **Next.js 16** (App Router) + **React 19**
 - **TypeScript** throughout
 - **Tailwind CSS v4** (configured in `src/app/globals.css`)
-- **Firebase** — **Authentication** (email/password) + **Cloud Firestore** +
-  **Cloud Storage** (completion photos)
+- **Firebase** — **Authentication** (email/password, plus anonymous sessions for
+  contractor action links) + **Cloud Firestore** + **Cloud Storage**
+  (completion photos and project documents)
 
 ## Project structure
 
@@ -36,6 +39,7 @@ src/
   app/
     page.tsx                 Public landing page ("TradeFlow is running")
     login/                   Login / sign-up screen
+    link/[token]/            Public contractor action link (no login required)
     (app)/                   Authenticated area (shares nav + auth guard)
       layout.tsx             Client-side auth guard, renders the AppShell
       dashboard/             GC daily dashboard
@@ -45,23 +49,30 @@ src/
       trade-phases/          Trade phase list, create form, detail
       material-orders/       Material tracking list + create form
       punch-items/           Punch list across all projects
-      notifications/         In-app notification records (dev/testing view)
+      documents/             Document Vault (list, search/filter, upload)
+      notifications/         Notification history (records + filters)
   components/
     ui/                      Reusable UI primitives (Button, Card, Field, …)
-    layout/AppShell.tsx      Sidebar + mobile nav
+    layout/AppShell.tsx      Sidebar + mobile nav (role-aware)
     auth/                    Login form + logout button
-    forms/                   Trade phase + material order forms
-    phase/                   Phase detail sections (materials, completion, punch)
+    forms/                   Trade phase, material order + document upload forms
+    phase/                   Phase detail sections (materials, completion, punch,
+                             documents, schedule confirmation, link buttons)
+    documents/               Pinned plans section for project detail
+    contractor/              Public contractor action link screens
     providers/               AuthProvider (Firebase auth state + role)
   lib/
-    firebase/client.ts       Firebase app/Auth/Firestore/Storage initialization
+    firebase/client.ts       Firebase app/Auth/Firestore/Storage + anon session
     api.ts                   Data-access layer (all Firestore queries live here)
-    constants.ts             Roles, statuses, status colors
+    constants.ts             Roles, statuses, status colors, document/link types
     database.types.ts        TypeScript types for every collection
     materials.ts             Material readiness helper
+    documents.ts             Document helpers (type inference, tags, sizes, paths)
+    actionLinks.ts           Tokenized link helpers (generate/validate/expire)
+    notifications.ts         Notification delivery service structure
     format.ts                Date/time formatting helpers
 firestore.rules              Firestore security rules
-storage.rules                Cloud Storage security rules (completion photos)
+storage.rules                Cloud Storage security rules (photos + documents)
 firestore.indexes.json       Firestore composite index definitions
 firebase.json                Firebase CLI config (Firestore + Storage rules)
 .firebaserc                  Default Firebase project (ammonssoftware)
@@ -84,12 +95,16 @@ npm install
 1. Go to <https://console.firebase.google.com> and open (or create) the project
    `ammonssoftware`.
 2. **Build → Authentication → Get started**, then enable the
-   **Email/Password** sign-in provider.
+   **Email/Password** sign-in provider. Also enable the **Anonymous** provider —
+   contractor action links sign visitors in anonymously so their reads/writes
+   satisfy the `signedIn()` Firestore rules without a full account.
 3. **Build → Firestore Database → Create database** (start in production mode;
    the rules in this repo lock it down to signed-in users).
 4. **Build → Storage → Get started** to provision the default Cloud Storage
-   bucket (used for completion photos in Sprint 2). The `storage.rules` in this
-   repo restrict uploads to signed-in users and image files under 15 MB.
+   bucket. It stores completion photos and project documents. The
+   `storage.rules` in this repo restrict completion-photo uploads to image
+   files under 15 MB and project-document uploads to signed-in users under
+   25 MB.
 5. **Project settings → General → Your apps → Web app** (`</>`). Register a web
    app to obtain its config values (`apiKey`, `appId`, etc.).
 
@@ -110,6 +125,7 @@ cp .env.local.example .env.local
 | `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | ✅ | Storage bucket (Sprint 2) |
 | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | ✅ | Cloud messaging / project number |
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | ✅ | Identifies this web app |
+| `NEXT_PUBLIC_NOTIFICATIONS_EMAIL_ENABLED` | Optional | Set to `true` to mark notification email delivery as “queued” once a real email provider is wired. Defaults off — records are still created. |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Only for seeding | Path to a service-account key so `npm run seed` (Admin SDK) can write data. **Server-only — never expose to the browser.** |
 
 The `NEXT_PUBLIC_FIREBASE_*` values are public by design (the browser SDK needs
@@ -156,12 +172,21 @@ npm run seed
 ```
 
 This creates a sample 40-unit apartment project with contractors, trades, and
-trade phases in various statuses — plus Sprint 2 data: material orders (varied
-statuses including delayed/received/arriving), completion submissions, punch
-items (including an overdue and a resolved one), recent activity, and
-notification records — so the dashboard looks realistic. The seeder is
+trade phases in various statuses — plus Sprint 2 data (material orders,
+completion submissions, punch items, recent activity) and Sprint 3 data:
+project documents (including pinned blueprints/layouts, a contract, an invoice,
+a change order, and a permit), tokenized contractor action links (an active
+schedule confirmation, an active punch update, and a used link), example
+schedule confirmations (pending and declined), a contractor punch-item update,
+and notification records covering the new event types — so the dashboard,
+document vault, and notification history look realistic. The seeder is
 **safe**: it refuses to run in production and skips entirely if the demo project
 already exists.
+
+> Because the seeder skips when the demo project exists, re-running it will
+> **not** add the new Sprint 3 data to an already-seeded database. To pick up
+> the Sprint 3 demo records, delete the existing `Maple Street Apartments
+> (Demo)` project (and its related docs) first, then run `npm run seed` again.
 
 ---
 
@@ -170,23 +195,44 @@ already exists.
 - **Auth** — email/password sign-in via Firebase Authentication. The login form
   creates the account and writes a `users/{uid}` profile document (with a
   default role). `AuthProvider` exposes the current user + role to the app via
-  the `useAuth()` hook.
+  the `useAuth()` hook. **Anonymous sessions** are used for contractor action
+  links: the public `/link/[token]` page signs the visitor in anonymously
+  (`ensureAnonymousSession()`) so their reads/writes satisfy the `signedIn()`
+  rules without a full account.
 - **Firestore** — a NoSQL document store holds `projects`, `contractors`,
-  `trades`, `tradePhases`, `activityLogs`, `users`, and the Sprint 2
-  collections: `materialOrders`, `completionRecords`, `inspections`,
-  `punchItems`, and `notifications`. Firestore has no joins, so the data layer
-  (`src/lib/api.ts`) loads related collections and stitches names together in
-  memory.
+  `trades`, `tradePhases`, `activityLogs`, `users`, the Sprint 2 collections
+  (`materialOrders`, `completionRecords`, `inspections`, `punchItems`,
+  `notifications`), and the Sprint 3 collections: `documents` (the document
+  vault) and `contractorActionLinks` (tokenized links). Firestore has no joins,
+  so the data layer (`src/lib/api.ts`) loads related collections and stitches
+  names together in memory.
 - **Storage** — Cloud Storage holds completion photos under
-  `completion/{tradePhaseId}/`. The contractor submission flow uploads the
-  files, then stores their download URLs on the Firestore `completionRecords`
-  document. `storage.rules` allow signed-in users to read, and to upload image
-  files up to 15 MB.
-- **Security rules** — `firestore.rules` restricts all collections to
-  signed-in users (with users only able to write their own profile, and
-  append-only activity logs / create-only inspections). `storage.rules`
-  similarly gate uploads to signed-in users. Project-scoped restrictions are
-  planned for a later sprint.
+  `completion/{tradePhaseId}/` and project documents under
+  `documents/{projectId}/`. Upload flows push the files, then store their
+  download URLs (and the storage path) on the relevant Firestore document.
+  `storage.rules` allow signed-in users to read, restrict completion-photo
+  uploads to image files up to 15 MB, and restrict document uploads to any file
+  type up to 25 MB.
+- **Contractor action links** — instead of giving subcontractors full accounts,
+  the GC generates a tokenized link for a specific action (schedule
+  confirmation, punch update). The token doubles as the Firestore document id so
+  an unauthenticated visitor can fetch exactly one link by URL; `actionLinks.ts`
+  generates, validates, and expires them (status `Active` → `Used` /
+  `Expired` / `Revoked`, with a default 14-day TTL). The public screen confirms
+  the action against the expected entity and marks the link used.
+- **Notification delivery structure** — `notifications.ts` is a delivery-service
+  scaffold. Every workflow event (`dispatchNotification`) always writes a
+  Firestore `notifications` record and *prepares* email/SMS delivery: email is
+  marked `queued` when `NEXT_PUBLIC_NOTIFICATIONS_EMAIL_ENABLED=true` (otherwise
+  `skipped`), and SMS is always `not_enabled`. No messages are actually sent yet
+  — this gives a single seam to plug a real provider (e.g. Cloud Functions +
+  SendGrid/Twilio) into later.
+- **Security rules** — `firestore.rules` restricts collections to signed-in
+  users (users only write their own profile; activity logs are append-only;
+  inspections are create-only). `contractorActionLinks` allow an unauthenticated
+  `get` by token (so a contractor can open their link) but restrict listing and
+  writes to signed-in users. `storage.rules` similarly gate uploads to signed-in
+  users. Project-scoped restrictions are planned for a later sprint.
 - **Route protection** — auth is client-side. The `(app)` layout is a client
   component that waits for auth state, then redirects unauthenticated visitors
   to `/login`.
@@ -254,6 +300,71 @@ Built on top of the Sprint 1 foundation:
 
 ---
 
+## Sprint 3 feature set
+
+Built on top of the Sprint 1 and Sprint 2 foundations:
+
+- ✅ **Document Vault** — upload project documents (blueprints, layouts,
+  contracts, invoices, change orders, permits, photos, and more) to Firebase
+  Storage with a Firestore record per file. Files can be tagged and optionally
+  attached to a trade, phase, contractor, or punch item. The vault offers
+  text search (name + tags) and project / type / trade / pinned filters, with
+  pinned items sorted first. The upload form auto-fills the name and infers the
+  document type from the file, and shows a live upload progress bar (uploads
+  are capped at 25 MB).
+- ✅ **Pinned blueprints & layouts** — blueprints and layouts can be pinned so
+  the current plans are one tap away. Pinned plans surface in a dedicated vault
+  section, on the relevant project's detail page, and on the dashboard.
+- ✅ **Documents on the phase page** — each trade phase detail page lists the
+  documents attached to that phase and lets the GC upload a new one inline
+  (pre-scoped to that project + phase).
+- ✅ **Contractor action links** — the GC generates a tokenized link for a
+  single action without giving the subcontractor an account. Links carry a type
+  (`Schedule Confirmation`, `Completion Submission`, `Punch Item Update`,
+  `Document Request`), an expiration (default 14 days), and a status
+  (`Active` → `Used` / `Expired` / `Revoked`). The public `/link/[token]`
+  screen validates the link against its expected entity and signs the visitor
+  in anonymously to perform the action.
+- ✅ **Schedule confirmation flow** — the GC requests a contractor confirm a
+  scheduled date; the contractor opens the link on their phone and confirms or
+  declines (with a reason). The phase records the confirmation status and note,
+  and the GC sees pending and declined confirmations on the dashboard.
+- ✅ **Punch item update flow** — the GC can hand a contractor a link to update
+  a specific punch item; the contractor adds a note and marks it
+  `In Progress` or `Resolved`. Contractor notes flow back to the phase and the
+  dashboard surfaces unresolved contractor updates.
+- ✅ **Action link security checks** — `validateActionLink()` centralizes
+  existence, revoked, expired, used (for single-use actions), and
+  entity-match checks, with clear per-reason error screens. Firestore rules
+  allow a token `get` but restrict listing and writes.
+- ✅ **Notification workflow structure** — a `dispatchNotification()` delivery
+  service always records a Firestore notification and prepares email/SMS
+  delivery (email `queued`/`skipped`, SMS `not_enabled`). Workflows fire
+  notifications for schedule confirmation requests, declines, punch-item
+  assignments (with the action link), and completion approvals/rejections.
+- ✅ **Notification history** — the Notifications screen lists every record with
+  recipient, type, related entity, message, prepared delivery status, and
+  timestamp, filterable by status and type.
+- ✅ **Dashboard updates** — pinned documents, recently uploaded documents,
+  pending and declined contractor confirmations, unresolved contractor punch
+  updates, and recent notifications.
+- ✅ **Role-aware navigation** — management-only destinations (Projects, Trades,
+  Contractors, Materials, Document Vault, Notifications) are hidden from the
+  `contractor` role.
+- ✅ **Updated Storage rules** + updated seed data covering all of the above.
+
+### What's **not** included in Sprint 3
+
+- Full SMS automation and real email sending — delivery is *prepared* and
+  recorded, but no provider is wired (no messages actually go out)
+- Document versioning, preview/annotation, or markup
+- A `Completion Submission` / `Document Request` action-link UI (the types
+  exist; only schedule confirmation and punch update have screens)
+- Per-project / per-role data restrictions (rules are still permissive beyond
+  the action-link token check)
+
+---
+
 ## Intentionally **not** included yet
 
 To keep the current scope focused, these are deliberately left out:
@@ -262,23 +373,25 @@ To keep the current scope focused, these are deliberately left out:
 - Bid comparison / bidding tools
 - Native mobile apps
 - AI features
-- Blueprint markup
-- Complex scheduling (Gantt, dependencies, critical path)
-- Per-project / per-role data restrictions (rules are permissive for now)
+- Blueprint markup / document annotation
+- Full SMS automation (real outbound SMS/email delivery)
+- Complex / advanced calendar scheduling (Gantt, dependencies, critical path)
+- Procore-style enterprise per-project / per-role permissions (rules are
+  permissive for now)
 
-## Planned next: Sprint 3
+## Planned next
 
-Recommended focus areas for the next sprint:
+Recommended focus areas for a future sprint:
 
-- **Real notification delivery** — wire the notification records to email/SMS
-  (e.g. Firebase Cloud Functions + a provider like SendGrid/Twilio) and add a
+- **Real notification delivery** — wire the prepared email/SMS deliveries to a
+  provider (e.g. Firebase Cloud Functions + SendGrid/Twilio) and add a
   per-user inbox with unread counts.
-- **Documents** — drawings, contracts, and change orders via Firebase Storage,
-  attached to projects and phases.
 - **Project-scoped security rules** — per-project membership and role checks in
   both Firestore and Storage rules, replacing the permissive MVP rules.
 - **Punch item photos** — let contractors attach before/after photos to punch
   items, reusing the completion-photo upload pattern.
+- **Document previews** — in-app previews/thumbnails and versioning for vault
+  documents.
 - **Reporting / exports** — per-project status and punch-list summaries (PDF/CSV)
   for owners and inspectors.
 - **Scheduling** — calendar/Gantt view of phases with dependencies.
