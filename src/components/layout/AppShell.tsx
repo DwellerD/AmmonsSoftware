@@ -6,20 +6,22 @@ import { useState } from "react";
 import { cn } from "@/lib/cn";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { LogoutButton } from "@/components/auth/LogoutButton";
-import { USER_ROLES } from "@/lib/constants";
+import { canManage, USER_ROLES } from "@/lib/constants";
 
 /**
  * AppShell renders the navigation chrome (sidebar on desktop, collapsible top
  * bar on mobile) around every authenticated page.
  *
  * The active page is highlighted by comparing the current pathname against
- * each nav item's href.
+ * each nav item's href. Management-only destinations are hidden from
+ * contractors so they see a focused, role-appropriate navigation.
  */
 
 interface NavItem {
   label: string;
   href: string;
   icon: React.ReactNode;
+  managerOnly?: boolean;
 }
 
 // Small inline icons keep the bundle light (no icon library needed).
@@ -41,6 +43,9 @@ const icons = {
   punch: (
     <path d="M9 11l3 3 8-8 1.5 1.5L12 17l-4.5-4.5L9 11ZM4 4h8v2H4V4Zm0 5h6v2H4V9Zm0 5h6v2H4v-2Zm0 5h10v2H4v-2Z" />
   ),
+  documents: (
+    <path d="M6 2h8l4 4v16H6V2Zm7 1.5V7h3.5L13 3.5ZM8 12h8v2H8v-2Zm0 4h8v2H8v-2Z" />
+  ),
   notifications: (
     <path d="M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2Zm6-6V11a6 6 0 0 0-4-5.65V5a2 2 0 1 0-4 0v.35A6 6 0 0 0 6 11v5l-2 2v1h16v-1l-2-2Z" />
   ),
@@ -52,8 +57,18 @@ const NAV_ITEMS: NavItem[] = [
     href: "/dashboard",
     icon: <Icon>{icons.dashboard}</Icon>,
   },
-  { label: "Projects", href: "/projects", icon: <Icon>{icons.projects}</Icon> },
-  { label: "Trades", href: "/trades", icon: <Icon>{icons.trades}</Icon> },
+  {
+    label: "Projects",
+    href: "/projects",
+    icon: <Icon>{icons.projects}</Icon>,
+    managerOnly: true,
+  },
+  {
+    label: "Trades",
+    href: "/trades",
+    icon: <Icon>{icons.trades}</Icon>,
+    managerOnly: true,
+  },
   {
     label: "Trade Phases",
     href: "/trade-phases",
@@ -63,11 +78,13 @@ const NAV_ITEMS: NavItem[] = [
     label: "Contractors",
     href: "/contractors",
     icon: <Icon>{icons.contractors}</Icon>,
+    managerOnly: true,
   },
   {
     label: "Materials",
     href: "/material-orders",
     icon: <Icon>{icons.materials}</Icon>,
+    managerOnly: true,
   },
   {
     label: "Punch List",
@@ -75,9 +92,16 @@ const NAV_ITEMS: NavItem[] = [
     icon: <Icon>{icons.punch}</Icon>,
   },
   {
+    label: "Document Vault",
+    href: "/documents",
+    icon: <Icon>{icons.documents}</Icon>,
+    managerOnly: true,
+  },
+  {
     label: "Notifications",
     href: "/notifications",
     icon: <Icon>{icons.notifications}</Icon>,
+    managerOnly: true,
   },
 ];
 
@@ -102,13 +126,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const roleLabel =
     USER_ROLES.find((r) => r.value === role)?.label ?? "Member";
 
+  // Contractors get a focused nav; managers see every destination.
+  const allowManage = canManage(role);
+  const visibleNavItems = NAV_ITEMS.filter(
+    (item) => allowManage || !item.managerOnly,
+  );
+
   // A nav link is active when the path matches or is nested under its href.
   function isActive(href: string) {
     return pathname === href || pathname.startsWith(href + "/");
   }
 
   const navLinks = (onClick?: () => void) =>
-    NAV_ITEMS.map((item) => (
+    visibleNavItems.map((item) => (
       <Link
         key={item.href}
         href={item.href}
