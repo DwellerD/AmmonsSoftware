@@ -1467,6 +1467,35 @@ export async function revokeActionLink(
 }
 
 /**
+ * Creates a Schedule Confirmation action link for a trade phase's contractor
+ * and logs that the request was sent (Sprint 3). Notification delivery is
+ * handled by the caller via the notification service.
+ */
+export async function requestScheduleConfirmation(input: {
+  phaseId: string;
+  projectId: string;
+  contractorId: string;
+  phaseTitle?: string;
+}): Promise<ContractorActionLink> {
+  const link = await createActionLink({
+    action_type: "Schedule Confirmation",
+    related_entity_id: input.phaseId,
+    contractor_id: input.contractorId,
+    project_id: input.projectId,
+  });
+  await logActivity({
+    action_type: "schedule_confirmation_requested",
+    entity_type: "trade_phase",
+    entity_id: input.phaseId,
+    project_id: input.projectId,
+    description: `Schedule confirmation requested${
+      input.phaseTitle ? ` for ${input.phaseTitle}` : ""
+    }`,
+  });
+  return link;
+}
+
+/**
  * Records a contractor's schedule confirmation decision on a trade phase
  * (Sprint 3). Confirming or declining updates the phase's confirmation status
  * (and note, for declines) and writes an activity log entry.

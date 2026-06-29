@@ -233,6 +233,8 @@ export default function TradePhaseDetailPage() {
           <ScheduleConfirmationManager
             phaseId={phase.id}
             projectId={phase.project_id}
+            phaseTitle={phase.title}
+            projectName={phase.project?.name ?? null}
             contractorId={phase.contractor_id}
             contractorName={phase.contractor?.company_name ?? null}
             confirmationStatus={phase.schedule_confirmation_status}

@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { ErrorAlert } from "@/components/ui/States";
-import { createActionLink } from "@/lib/api";
+import { requestScheduleConfirmation } from "@/lib/api";
+import { dispatchNotification } from "@/lib/notifications";
 import { buildActionLinkUrl } from "@/lib/actionLinks";
 import { useAuth } from "@/components/providers/AuthProvider";
 import type { ScheduleConfirmationStatus } from "@/lib/database.types";
@@ -12,11 +13,14 @@ import type { ScheduleConfirmationStatus } from "@/lib/database.types";
 /**
  * GC-side control on the trade phase page to request a schedule confirmation
  * from the assigned contractor. Generates a tokenized action link the GC can
- * copy and send (text/email). Shows the current confirmation status.
+ * copy and send (text/email), records a notification, and shows the current
+ * confirmation status.
  */
 export function ScheduleConfirmationManager({
   phaseId,
   projectId,
+  phaseTitle,
+  projectName,
   contractorId,
   contractorName,
   confirmationStatus,
@@ -24,6 +28,8 @@ export function ScheduleConfirmationManager({
 }: {
   phaseId: string;
   projectId: string;
+  phaseTitle: string;
+  projectName: string | null;
   contractorId: string | null;
   contractorName: string | null;
   confirmationStatus: ScheduleConfirmationStatus | null;
@@ -42,11 +48,20 @@ export function ScheduleConfirmationManager({
     setError(null);
     setCopied(false);
     try {
-      const link = await createActionLink({
-        action_type: "Schedule Confirmation",
-        related_entity_id: phaseId,
-        contractor_id: contractorId as string,
-        project_id: projectId,
+      const link = await requestScheduleConfirmation({
+        phaseId,
+        projectId,
+        contractorId: contractorId as string,
+        phaseTitle,
+      });
+      // Record (and prepare delivery for) the request notification.
+      await dispatchNotification({
+        recipientId: contractorId,
+        type: "schedule_confirmation_requested",
+        relatedEntityType: "trade_phase",
+        relatedEntityId: phaseId,
+        context: { subject: phaseTitle, projectName },
+        actionLinkToken: link.token,
       });
       setUrl(buildActionLinkUrl(window.location.origin, link.token));
     } catch (err) {
