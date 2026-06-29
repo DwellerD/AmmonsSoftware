@@ -9,15 +9,23 @@ import { ErrorAlert, LoadingState } from "@/components/ui/States";
 import { useAuth } from "@/components/providers/AuthProvider";
 import {
   listAllPunchItems,
+  listDocuments,
   listMaterialOrders,
+  listNotifications,
   listRecentActivity,
   listTradePhases,
 } from "@/lib/api";
+import {
+  NOTIFICATION_TYPE_LABELS,
+  NOTIFICATION_TYPE_STYLES,
+} from "@/lib/constants";
 import { todayIso, timeAgo, formatDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import type {
   ActivityLog,
   MaterialOrder,
+  Notification,
+  ProjectDocument,
   PunchItem,
   TradePhaseWithRelations,
 } from "@/lib/database.types";
@@ -35,6 +43,8 @@ export default function DashboardPage() {
   const [activity, setActivity] = useState<ActivityLog[]>([]);
   const [materials, setMaterials] = useState<MaterialOrder[]>([]);
   const [punch, setPunch] = useState<PunchItem[]>([]);
+  const [documents, setDocuments] = useState<ProjectDocument[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,16 +53,20 @@ export default function DashboardPage() {
       setLoading(true);
       setError(null);
       try {
-        const [ph, act, mats, pun] = await Promise.all([
+        const [ph, act, mats, pun, docs, notes] = await Promise.all([
           listTradePhases(),
           listRecentActivity(8),
           listMaterialOrders(),
           listAllPunchItems(),
+          listDocuments(),
+          listNotifications(),
         ]);
         setPhases(ph);
         setActivity(act);
         setMaterials(mats);
         setPunch(pun);
+        setDocuments(docs);
+        setNotifications(notes);
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Failed to load dashboard.",
@@ -116,6 +130,32 @@ export default function DashboardPage() {
       ),
     };
   }, [materials, phases, punch]);
+
+  // Sprint 3 attention lists (documents, contractor confirmations, updates).
+  const sprint3 = useMemo(() => {
+    const pinned = documents.filter((d) => d.pinned);
+    const recentDocs = [...documents]
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+      .slice(0, 5);
+    const isActivePunch = (p: PunchItem) =>
+      p.status !== "Resolved" && p.status !== "Closed";
+    return {
+      pinnedDocuments: pinned,
+      recentDocuments: recentDocs,
+      pendingConfirmations: phases.filter(
+        (p) => p.schedule_confirmation_status === "Pending",
+      ),
+      declinedConfirmations: phases.filter(
+        (p) => p.schedule_confirmation_status === "Declined",
+      ),
+      contractorPunchUpdates: punch.filter(
+        (p) => p.contractor_notes != null && isActivePunch(p),
+      ),
+      recentNotifications: [...notifications]
+        .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+        .slice(0, 5),
+    };
+  }, [documents, notifications, phases, punch]);
 
   return (
     <PageContainer>
@@ -234,6 +274,76 @@ export default function DashboardPage() {
             />
           </div>
 
+          {/* Sprint 3 attention sections */}
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <AttentionCard
+              title="Pinned documents"
+              count={sprint3.pinnedDocuments.length}
+              href="/documents"
+              emptyText="No pinned blueprints or layouts yet."
+              items={sprint3.pinnedDocuments.map((d) => ({
+                key: d.id,
+                href: "/documents",
+                primary: d.name,
+                badge: d.document_type,
+              }))}
+            />
+            <AttentionCard
+              title="Recently uploaded"
+              count={sprint3.recentDocuments.length}
+              href="/documents"
+              emptyText="No documents uploaded yet."
+              items={sprint3.recentDocuments.map((d) => ({
+                key: d.id,
+                href: "/documents",
+                primary: d.name,
+                secondary: `Added ${timeAgo(d.created_at)}`,
+              }))}
+            />
+            <AttentionCard
+              title="Pending confirmations"
+              count={sprint3.pendingConfirmations.length}
+              href="/trade-phases"
+              accent="amber"
+              emptyText="No schedule confirmations awaiting a reply."
+              items={sprint3.pendingConfirmations.map((p) => ({
+                key: p.id,
+                href: `/trade-phases/${p.id}`,
+                primary: p.title,
+                secondary: p.project?.name ?? "\u2014",
+              }))}
+            />
+            <AttentionCard
+              title="Declined confirmations"
+              count={sprint3.declinedConfirmations.length}
+              href="/trade-phases"
+              accent="red"
+              emptyText="No contractors have declined a scheduled date."
+              items={sprint3.declinedConfirmations.map((p) => ({
+                key: p.id,
+                href: `/trade-phases/${p.id}`,
+                primary: p.title,
+                secondary: p.schedule_confirmation_note
+                  ? p.schedule_confirmation_note
+                  : (p.project?.name ?? "\u2014"),
+              }))}
+            />
+            <AttentionCard
+              title="Contractor punch updates"
+              count={sprint3.contractorPunchUpdates.length}
+              href="/punch-items"
+              accent="orange"
+              emptyText="No unresolved updates from contractors."
+              items={sprint3.contractorPunchUpdates.map((p) => ({
+                key: p.id,
+                href: `/trade-phases/${p.trade_phase_id}`,
+                primary: p.title,
+                secondary: p.contractor_notes ?? undefined,
+                badge: p.status,
+              }))}
+            />
+          </div>
+
           <div className="grid gap-6 lg:grid-cols-2">
             {/* Recently updated phases */}
             <Card>
@@ -310,6 +420,50 @@ export default function DashboardPage() {
               </CardBody>
             </Card>
           </div>
+
+          {/* Recent notifications */}
+          <Card>
+            <CardHeader className="flex items-center justify-between">
+              <CardTitle>Recent notifications</CardTitle>
+              <Link
+                href="/notifications"
+                className="text-sm font-medium text-brand-600 hover:underline"
+              >
+                View all
+              </Link>
+            </CardHeader>
+            <CardBody className="p-0">
+              {sprint3.recentNotifications.length === 0 ? (
+                <p className="px-5 py-8 text-center text-sm text-ink-500">
+                  Notifications will appear here as events happen.
+                </p>
+              ) : (
+                <ul className="divide-y divide-ink-100">
+                  {sprint3.recentNotifications.map((n) => (
+                    <li
+                      key={n.id}
+                      className="flex items-start gap-3 px-5 py-3"
+                    >
+                      <span
+                        className={cn(
+                          "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
+                          NOTIFICATION_TYPE_STYLES[n.notification_type],
+                        )}
+                      >
+                        {NOTIFICATION_TYPE_LABELS[n.notification_type]}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-ink-800">{n.message}</p>
+                        <p className="text-xs text-ink-400">
+                          {timeAgo(n.created_at)}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardBody>
+          </Card>
         </div>
       )}
     </PageContainer>
