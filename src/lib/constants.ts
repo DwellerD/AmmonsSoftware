@@ -1,5 +1,6 @@
 import type {
   CompletionStatus,
+  DocumentType,
   InspectionResult,
   MaterialOrderStatus,
   NotificationType,
@@ -180,3 +181,37 @@ export const NOTIFICATION_TYPE_STYLES: Record<NotificationType, string> = {
   punch_item_assigned: "bg-sky-100 text-sky-800",
   material_delayed: "bg-amber-100 text-amber-800",
 };
+
+/* ---------------------------------------------------------------------------
+ * Sprint 3: Document Vault.
+ * ------------------------------------------------------------------------- */
+
+/** All document types, in the order shown in dropdowns. */
+export const DOCUMENT_TYPES: DocumentType[] = [
+  "Blueprint",
+  "Layout",
+  "Contract",
+  "Invoice",
+  "Change Order",
+  "Permit",
+  "Photo",
+  "Other",
+];
+
+/** Badge color classes for each document type. */
+export const DOCUMENT_TYPE_STYLES: Record<DocumentType, string> = {
+  Blueprint: "bg-blue-100 text-blue-800",
+  Layout: "bg-indigo-100 text-indigo-800",
+  Contract: "bg-violet-100 text-violet-800",
+  Invoice: "bg-emerald-100 text-emerald-800",
+  "Change Order": "bg-amber-100 text-amber-800",
+  Permit: "bg-sky-100 text-sky-800",
+  Photo: "bg-pink-100 text-pink-800",
+  Other: "bg-ink-100 text-ink-700",
+};
+
+/**
+ * Document types the GC most often struggles to find quickly. These are the
+ * types eligible for the pinned blueprints/layouts section (see Sprint 3).
+ */
+export const PINNABLE_PLAN_TYPES: DocumentType[] = ["Blueprint", "Layout"];

@@ -76,5 +76,11 @@ service cloud.firestore {
       allow read, create, update: if signedIn();
       allow delete: if false;
     }
+
+    // Project documents (Sprint 3 Document Vault). Signed-in users can read,
+    // create, update (rename, re-tag, pin/unpin), and delete their files.
+    match /documents/{documentId} {
+      allow read, write: if signedIn();
+    }
   }
 }

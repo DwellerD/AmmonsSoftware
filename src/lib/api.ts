@@ -25,6 +25,7 @@ import type {
   CompletionRecord,
   CompletionStatus,
   Contractor,
+  DocumentType,
   Inspection,
   InspectionResult,
   MaterialOrder,
@@ -33,6 +34,7 @@ import type {
   NotificationStatus,
   NotificationType,
   Project,
+  ProjectDocument,
   PunchItem,
   PunchItemStatus,
   PunchPriority,
@@ -70,6 +72,7 @@ const COLLECTIONS = {
   inspections: "inspections",
   punchItems: "punchItems",
   notifications: "notifications",
+  documents: "documents",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -1092,4 +1095,79 @@ export async function markNotificationRead(id: string): Promise<void> {
   await updateDoc(doc(getDb(), COLLECTIONS.notifications, id), {
     status: "read" as NotificationStatus,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Documents (Sprint 3 — Document Vault)
+//
+// A document record stores the metadata for a file kept in Firebase Storage.
+// The upload helper (which writes to Storage) lives below; these functions read
+// and map the Firestore side. Documents always belong to a project and may
+// optionally link to a trade, phase, contractor, or punch item.
+// ---------------------------------------------------------------------------
+
+function mapDocument(s: Snap): ProjectDocument {
+  const d = s.data();
+  return {
+    id: s.id,
+    name: d.name,
+    document_type: d.document_type as DocumentType,
+    project_id: d.project_id,
+    trade_id: d.trade_id ?? null,
+    trade_phase_id: d.trade_phase_id ?? null,
+    contractor_id: d.contractor_id ?? null,
+    punch_item_id: d.punch_item_id ?? null,
+    file_url: d.file_url,
+    storage_path: d.storage_path,
+    uploaded_by: d.uploaded_by ?? null,
+    tags: Array.isArray(d.tags) ? (d.tags as string[]) : [],
+    pinned: Boolean(d.pinned),
+    created_at: toIso(d.created_at),
+    updated_at: toIso(d.updated_at),
+  };
+}
+
+export interface DocumentFilters {
+  projectId?: string;
+  tradeId?: string;
+  tradePhaseId?: string;
+  contractorId?: string;
+  punchItemId?: string;
+  documentType?: DocumentType;
+  pinnedOnly?: boolean;
+}
+
+/** Lists document records (newest first) with optional in-memory filters. */
+export async function listDocuments(
+  filters: DocumentFilters = {},
+): Promise<ProjectDocument[]> {
+  const snap = await getDocs(collection(getDb(), COLLECTIONS.documents));
+  let docs = snap.docs
+    .map(mapDocument)
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+
+  if (filters.projectId)
+    docs = docs.filter((d) => d.project_id === filters.projectId);
+  if (filters.tradeId)
+    docs = docs.filter((d) => d.trade_id === filters.tradeId);
+  if (filters.tradePhaseId)
+    docs = docs.filter((d) => d.trade_phase_id === filters.tradePhaseId);
+  if (filters.contractorId)
+    docs = docs.filter((d) => d.contractor_id === filters.contractorId);
+  if (filters.punchItemId)
+    docs = docs.filter((d) => d.punch_item_id === filters.punchItemId);
+  if (filters.documentType)
+    docs = docs.filter((d) => d.document_type === filters.documentType);
+  if (filters.pinnedOnly) docs = docs.filter((d) => d.pinned);
+
+  return docs;
+}
+
+/** Loads a single document record by id, or null if it doesn't exist. */
+export async function getDocument(
+  id: string,
+): Promise<ProjectDocument | null> {
+  const ref = doc(getDb(), COLLECTIONS.documents, id);
+  const snap = await getDoc(ref);
+  return snap.exists() ? mapDocument(snap as Snap) : null;
 }

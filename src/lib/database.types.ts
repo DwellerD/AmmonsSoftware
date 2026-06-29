@@ -33,7 +33,14 @@ export type ActivityAction =
   | "completion_submitted"
   | "inspection_recorded"
   | "punch_item_created"
-  | "punch_item_resolved";
+  | "punch_item_resolved"
+  | "document_uploaded"
+  | "document_pinned"
+  | "document_unpinned"
+  | "schedule_confirmation_requested"
+  | "schedule_confirmed"
+  | "schedule_declined"
+  | "punch_item_updated";
 
 /** Where a material order stands in the procurement/delivery process. */
 export type MaterialOrderStatus =
@@ -244,4 +251,48 @@ export interface Notification {
   message: string;
   status: NotificationStatus;
   created_at: string;
+}
+
+/* ---------------------------------------------------------------------------
+ * Sprint 3: Document Vault.
+ * A project document is a file (blueprint, contract, invoice, etc.) stored in
+ * Firebase Storage with its metadata kept here in Firestore. Documents always
+ * belong to a project and may optionally link to a trade, trade phase,
+ * contractor, or punch item so they can be surfaced in the right places.
+ * ------------------------------------------------------------------------- */
+
+/** The kinds of document the vault understands. */
+export type DocumentType =
+  | "Blueprint"
+  | "Layout"
+  | "Contract"
+  | "Invoice"
+  | "Change Order"
+  | "Permit"
+  | "Photo"
+  | "Other";
+
+/** A project document record (file metadata; the file lives in Storage). */
+export interface ProjectDocument {
+  id: string;
+  /** Human-friendly document name shown in the vault. */
+  name: string;
+  document_type: DocumentType;
+  project_id: string;
+  /** Optional links to related entities (any may be null). */
+  trade_id: string | null;
+  trade_phase_id: string | null;
+  contractor_id: string | null;
+  punch_item_id: string | null;
+  /** Firebase Storage download URL for the file. */
+  file_url: string;
+  /** Path of the file within the Storage bucket (used for deletes/lookups). */
+  storage_path: string;
+  uploaded_by: string | null;
+  /** Free-form tags for search/filtering. */
+  tags: string[];
+  /** Pinned documents are surfaced near the top of the vault. */
+  pinned: boolean;
+  created_at: string;
+  updated_at: string;
 }
