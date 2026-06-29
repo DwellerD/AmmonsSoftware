@@ -8,6 +8,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
   type DocumentData,
@@ -21,12 +22,21 @@ import {
   uploadBytesResumable,
 } from "firebase/storage";
 import { buildDocumentStoragePath } from "@/lib/documents";
+import {
+  defaultExpiration,
+  entityTypeForAction,
+  generateActionToken,
+} from "@/lib/actionLinks";
 import type {
+  ActionLinkEntityType,
+  ActionLinkStatus,
+  ActionLinkType,
   ActivityAction,
   ActivityLog,
   CompletionRecord,
   CompletionStatus,
   Contractor,
+  ContractorActionLink,
   DocumentType,
   Inspection,
   InspectionResult,
@@ -75,6 +85,7 @@ const COLLECTIONS = {
   punchItems: "punchItems",
   notifications: "notifications",
   documents: "documents",
+  contractorActionLinks: "contractorActionLinks",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -1282,4 +1293,129 @@ export async function setDocumentPinned(
     description: `${pinned ? "Pinned" : "Unpinned"} document: ${document.name}`,
   });
   return document;
+}
+
+// ---------------------------------------------------------------------------
+// Contractor action links (Sprint 3)
+// ---------------------------------------------------------------------------
+
+function mapActionLink(s: Snap): ContractorActionLink {
+  const data = s.data();
+  return {
+    id: s.id,
+    token: (data.token as string) ?? s.id,
+    action_type: data.action_type as ActionLinkType,
+    related_entity_type: data.related_entity_type as ActionLinkEntityType,
+    related_entity_id: data.related_entity_id as string,
+    contractor_id: data.contractor_id as string,
+    project_id: data.project_id as string,
+    expiration_date: (data.expiration_date as string | null) ?? null,
+    used_at: (data.used_at as string | null) ?? null,
+    status: data.status as ActionLinkStatus,
+    created_at: toIso(data.created_at),
+    updated_at: toIso(data.updated_at),
+  };
+}
+
+export interface NewActionLinkInput {
+  action_type: ActionLinkType;
+  related_entity_id: string;
+  contractor_id: string;
+  project_id: string;
+  /** Optional explicit entity type; inferred from action_type when omitted. */
+  related_entity_type?: ActionLinkEntityType;
+  /** Optional explicit ISO expiry; defaults to the standard TTL when omitted. */
+  expiration_date?: string | null;
+}
+
+/**
+ * Creates a contractor action link. The unguessable token is also used as the
+ * Firestore document id, so the link can only be opened by someone who has the
+ * token (the collection is never listed publicly).
+ */
+export async function createActionLink(
+  input: NewActionLinkInput,
+): Promise<ContractorActionLink> {
+  const token = generateActionToken();
+  const ref = doc(getDb(), COLLECTIONS.contractorActionLinks, token);
+  await setDoc(ref, {
+    token,
+    action_type: input.action_type,
+    related_entity_type:
+      input.related_entity_type ?? entityTypeForAction(input.action_type),
+    related_entity_id: input.related_entity_id,
+    contractor_id: input.contractor_id,
+    project_id: input.project_id,
+    expiration_date:
+      input.expiration_date === undefined
+        ? defaultExpiration()
+        : input.expiration_date,
+    used_at: null,
+    status: "Active" as ActionLinkStatus,
+    created_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+  });
+  return mapActionLink((await getDoc(ref)) as Snap);
+}
+
+/** Loads a link by its token (document id), or null if it doesn't exist. */
+export async function getActionLinkByToken(
+  token: string,
+): Promise<ContractorActionLink | null> {
+  const ref = doc(getDb(), COLLECTIONS.contractorActionLinks, token);
+  const snap = await getDoc(ref);
+  return snap.exists() ? mapActionLink(snap as Snap) : null;
+}
+
+export interface ActionLinkFilters {
+  projectId?: string;
+  contractorId?: string;
+  relatedEntityId?: string;
+  actionType?: ActionLinkType;
+  status?: ActionLinkStatus;
+}
+
+/** Lists action links (GC side), newest first, with optional filters. */
+export async function listActionLinks(
+  filters: ActionLinkFilters = {},
+): Promise<ContractorActionLink[]> {
+  const snap = await getDocs(
+    collection(getDb(), COLLECTIONS.contractorActionLinks),
+  );
+  let links = snap.docs.map((d) => mapActionLink(d as Snap));
+  if (filters.projectId)
+    links = links.filter((l) => l.project_id === filters.projectId);
+  if (filters.contractorId)
+    links = links.filter((l) => l.contractor_id === filters.contractorId);
+  if (filters.relatedEntityId)
+    links = links.filter((l) => l.related_entity_id === filters.relatedEntityId);
+  if (filters.actionType)
+    links = links.filter((l) => l.action_type === filters.actionType);
+  if (filters.status) links = links.filter((l) => l.status === filters.status);
+  return links.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+}
+
+/** Marks a link as used (one-time actions). */
+export async function markActionLinkUsed(
+  token: string,
+): Promise<ContractorActionLink> {
+  const ref = doc(getDb(), COLLECTIONS.contractorActionLinks, token);
+  await updateDoc(ref, {
+    status: "Used" as ActionLinkStatus,
+    used_at: new Date().toISOString(),
+    updated_at: serverTimestamp(),
+  });
+  return mapActionLink((await getDoc(ref)) as Snap);
+}
+
+/** Revokes a link so it can no longer be used. */
+export async function revokeActionLink(
+  token: string,
+): Promise<ContractorActionLink> {
+  const ref = doc(getDb(), COLLECTIONS.contractorActionLinks, token);
+  await updateDoc(ref, {
+    status: "Revoked" as ActionLinkStatus,
+    updated_at: serverTimestamp(),
+  });
+  return mapActionLink((await getDoc(ref)) as Snap);
 }

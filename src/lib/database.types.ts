@@ -296,3 +296,52 @@ export interface ProjectDocument {
   created_at: string;
   updated_at: string;
 }
+
+/* ---------------------------------------------------------------------------
+ * Sprint 3: Contractor action links.
+ * A lightweight, tokenized link the GC can hand to a contractor so they can
+ * take a single scoped action (confirm a schedule, submit completion, update a
+ * punch item, or respond to a document request) without needing a full account
+ * or access to unrelated project data.
+ * ------------------------------------------------------------------------- */
+
+/** The action a contractor link grants. */
+export type ActionLinkType =
+  | "Schedule Confirmation"
+  | "Completion Submission"
+  | "Punch Item Update"
+  | "Document Request";
+
+/** Lifecycle status of a contractor action link. */
+export type ActionLinkStatus = "Active" | "Used" | "Expired" | "Revoked";
+
+/** The kind of entity a link points at. */
+export type ActionLinkEntityType =
+  | "trade_phase"
+  | "punch_item"
+  | "completion_record"
+  | "document_request";
+
+/**
+ * A tokenized contractor action link. The document id IS the token, so a link
+ * can only be opened by someone who has the (unguessable) token; the vault/list
+ * of links is never exposed publicly.
+ */
+export interface ContractorActionLink {
+  id: string;
+  /** Unguessable token; equals the document id. */
+  token: string;
+  action_type: ActionLinkType;
+  related_entity_type: ActionLinkEntityType;
+  related_entity_id: string;
+  contractor_id: string;
+  project_id: string;
+  /** ISO date after which the link is no longer valid (null = never expires). */
+  expiration_date: string | null;
+  /** When the link was first used to complete its action (null until used). */
+  used_at: string | null;
+  status: ActionLinkStatus;
+  created_at: string;
+  updated_at: string;
+}
+

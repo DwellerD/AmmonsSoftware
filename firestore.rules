@@ -82,5 +82,19 @@ service cloud.firestore {
     match /documents/{documentId} {
       allow read, write: if signedIn();
     }
+
+    // Contractor action links (Sprint 3). A link's document id IS its
+    // unguessable token, so a single-document `get` only succeeds for someone
+    // who already has the token — this is how an unauthenticated contractor
+    // opens their link. Listing the whole collection (which would leak every
+    // token) is restricted to signed-in users. Contractors complete their
+    // action after a lightweight (anonymous) sign-in, so create/update require
+    // a signed-in request; deletes are blocked (links are revoked, not removed).
+    match /contractorActionLinks/{token} {
+      allow get: if true;
+      allow list: if signedIn();
+      allow create, update: if signedIn();
+      allow delete: if false;
+    }
   }
 }

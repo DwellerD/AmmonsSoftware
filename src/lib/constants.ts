@@ -1,4 +1,6 @@
 import type {
+  ActionLinkStatus,
+  ActionLinkType,
   CompletionStatus,
   DocumentType,
   InspectionResult,
@@ -215,3 +217,34 @@ export const DOCUMENT_TYPE_STYLES: Record<DocumentType, string> = {
  * types eligible for the pinned blueprints/layouts section (see Sprint 3).
  */
 export const PINNABLE_PLAN_TYPES: DocumentType[] = ["Blueprint", "Layout"];
+
+/* ---------------------------------------------------------------------------
+ * Sprint 3: Contractor action links.
+ * ------------------------------------------------------------------------- */
+
+/** All contractor action link types. */
+export const ACTION_LINK_TYPES: ActionLinkType[] = [
+  "Schedule Confirmation",
+  "Completion Submission",
+  "Punch Item Update",
+  "Document Request",
+];
+
+/** All contractor action link statuses. */
+export const ACTION_LINK_STATUSES: ActionLinkStatus[] = [
+  "Active",
+  "Used",
+  "Expired",
+  "Revoked",
+];
+
+/** Badge color classes for each action link status. */
+export const ACTION_LINK_STATUS_STYLES: Record<ActionLinkStatus, string> = {
+  Active: "bg-emerald-100 text-emerald-800",
+  Used: "bg-ink-100 text-ink-700",
+  Expired: "bg-amber-100 text-amber-800",
+  Revoked: "bg-rose-100 text-rose-800",
+};
+
+/** Default number of days before a generated action link expires. */
+export const ACTION_LINK_DEFAULT_TTL_DAYS = 14;
