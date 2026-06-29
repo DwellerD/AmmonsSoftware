@@ -5,7 +5,7 @@ import Link from "next/link";
 import { PageContainer, PageHeader } from "@/components/ui/PageContainer";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Select } from "@/components/ui/Field";
+import { Input, Select } from "@/components/ui/Field";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/ui/States";
 import {
   listDocuments,
@@ -45,6 +45,7 @@ export default function DocumentsPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Filter state
+  const [search, setSearch] = useState("");
   const [projectId, setProjectId] = useState("");
   const [documentType, setDocumentType] = useState<"" | DocumentType>("");
   const [tradeId, setTradeId] = useState("");
@@ -97,18 +98,24 @@ export default function DocumentsPage() {
 
   // Apply filters, then sort pinned-first (newest within each group).
   const visibleDocuments = useMemo(() => {
+    const term = search.trim().toLowerCase();
     const filtered = documents.filter((d) => {
       if (projectId && d.project_id !== projectId) return false;
       if (documentType && d.document_type !== documentType) return false;
       if (tradeId && d.trade_id !== tradeId) return false;
       if (pinnedOnly && !d.pinned) return false;
+      if (term) {
+        const inName = d.name.toLowerCase().includes(term);
+        const inTags = d.tags.some((tag) => tag.toLowerCase().includes(term));
+        if (!inName && !inTags) return false;
+      }
       return true;
     });
     return filtered.sort((a, b) => {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       return a.created_at < b.created_at ? 1 : -1;
     });
-  }, [documents, projectId, documentType, tradeId, pinnedOnly]);
+  }, [documents, search, projectId, documentType, tradeId, pinnedOnly]);
 
   return (
     <PageContainer>
@@ -125,57 +132,66 @@ export default function DocumentsPage() {
       />
 
       {/* Filters */}
-      <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Select
-          aria-label="Filter by project"
-          value={projectId}
-          onChange={(e) => {
-            setProjectId(e.target.value);
-            setTradeId("");
-          }}
-        >
-          <option value="">All projects</option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </Select>
+      <div className="mb-5 space-y-3">
+        <Input
+          type="search"
+          aria-label="Search documents by name or tag"
+          placeholder="Search by name or tag…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Select
+            aria-label="Filter by project"
+            value={projectId}
+            onChange={(e) => {
+              setProjectId(e.target.value);
+              setTradeId("");
+            }}
+          >
+            <option value="">All projects</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </Select>
 
-        <Select
-          aria-label="Filter by document type"
-          value={documentType}
-          onChange={(e) => setDocumentType(e.target.value as "" | DocumentType)}
-        >
-          <option value="">All types</option>
-          {DOCUMENT_TYPES.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </Select>
+          <Select
+            aria-label="Filter by document type"
+            value={documentType}
+            onChange={(e) => setDocumentType(e.target.value as "" | DocumentType)}
+          >
+            <option value="">All types</option>
+            {DOCUMENT_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </Select>
 
-        <Select
-          aria-label="Filter by trade"
-          value={tradeId}
-          onChange={(e) => setTradeId(e.target.value)}
-        >
-          <option value="">All trades</option>
-          {tradeOptions.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </Select>
+          <Select
+            aria-label="Filter by trade"
+            value={tradeId}
+            onChange={(e) => setTradeId(e.target.value)}
+          >
+            <option value="">All trades</option>
+            {tradeOptions.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </Select>
 
-        <Select
-          aria-label="Filter by pinned status"
-          value={pinnedOnly ? "pinned" : "all"}
-          onChange={(e) => setPinnedOnly(e.target.value === "pinned")}
-        >
-          <option value="all">All documents</option>
-          <option value="pinned">Pinned only</option>
-        </Select>
+          <Select
+            aria-label="Filter by pinned status"
+            value={pinnedOnly ? "pinned" : "all"}
+            onChange={(e) => setPinnedOnly(e.target.value === "pinned")}
+          >
+            <option value="all">All documents</option>
+            <option value="pinned">Pinned only</option>
+          </Select>
+        </div>
       </div>
 
       {loading ? (
