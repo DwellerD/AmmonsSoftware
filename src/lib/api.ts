@@ -18,7 +18,9 @@ import {
   getDownloadURL,
   ref as storageRef,
   uploadBytes,
+  uploadBytesResumable,
 } from "firebase/storage";
+import { buildDocumentStoragePath } from "@/lib/documents";
 import type {
   ActivityAction,
   ActivityLog,
@@ -1170,4 +1172,93 @@ export async function getDocument(
   const ref = doc(getDb(), COLLECTIONS.documents, id);
   const snap = await getDoc(ref);
   return snap.exists() ? mapDocument(snap as Snap) : null;
+}
+
+/**
+ * Uploads a document file to Firebase Storage under
+ * `documents/{projectId}/` and returns the download URL plus the storage path.
+ *
+ * Uses a resumable upload so the caller can show real upload progress. The
+ * optional `onProgress` callback receives a 0–100 percentage. Errors (network,
+ * permission, size) reject the returned promise so the form can show them.
+ */
+export function uploadProjectDocumentFile(
+  projectId: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<{ file_url: string; storage_path: string }> {
+  const storage_path = buildDocumentStoragePath(projectId, file.name);
+  const r = storageRef(getFirebaseStorage(), storage_path);
+  const task = uploadBytesResumable(r, file, { contentType: file.type });
+
+  return new Promise((resolve, reject) => {
+    task.on(
+      "state_changed",
+      (snapshot) => {
+        if (onProgress && snapshot.totalBytes > 0) {
+          const percent = Math.round(
+            (snapshot.bytesTransferred / snapshot.totalBytes) * 100,
+          );
+          onProgress(percent);
+        }
+      },
+      (error) => reject(error),
+      async () => {
+        try {
+          const file_url = await getDownloadURL(task.snapshot.ref);
+          resolve({ file_url, storage_path });
+        } catch (err) {
+          reject(err);
+        }
+      },
+    );
+  });
+}
+
+export interface NewDocumentInput {
+  name: string;
+  document_type: DocumentType;
+  project_id: string;
+  trade_id?: string | null;
+  trade_phase_id?: string | null;
+  contractor_id?: string | null;
+  punch_item_id?: string | null;
+  file_url: string;
+  storage_path: string;
+  tags?: string[];
+  pinned?: boolean;
+}
+
+/**
+ * Saves a document's metadata to Firestore after its file has been uploaded to
+ * Storage (see uploadProjectDocumentFile). Also writes an activity log entry.
+ */
+export async function createDocument(
+  input: NewDocumentInput,
+): Promise<ProjectDocument> {
+  const ref = await addDoc(collection(getDb(), COLLECTIONS.documents), {
+    name: input.name,
+    document_type: input.document_type,
+    project_id: input.project_id,
+    trade_id: input.trade_id ?? null,
+    trade_phase_id: input.trade_phase_id ?? null,
+    contractor_id: input.contractor_id ?? null,
+    punch_item_id: input.punch_item_id ?? null,
+    file_url: input.file_url,
+    storage_path: input.storage_path,
+    uploaded_by: uid(),
+    tags: input.tags ?? [],
+    pinned: input.pinned ?? false,
+    created_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+  });
+  const document = mapDocument((await getDoc(ref)) as Snap);
+  await logActivity({
+    action_type: "document_uploaded",
+    entity_type: "document",
+    entity_id: document.id,
+    project_id: document.project_id,
+    description: `Document uploaded: ${document.name}`,
+  });
+  return document;
 }
