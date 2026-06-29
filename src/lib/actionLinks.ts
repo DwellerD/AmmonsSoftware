@@ -103,3 +103,63 @@ export function entityTypeForAction(
 export function allowsRepeatAccess(action: ActionLinkType): boolean {
   return action === "Punch Item Update" || action === "Document Request";
 }
+
+/** Why a link can't be used. `missing` is for a link that doesn't exist. */
+export type ActionLinkInvalidReason =
+  | "missing"
+  | "expired"
+  | "revoked"
+  | "used"
+  | "mismatch";
+
+export type ActionLinkValidation =
+  | { ok: true }
+  | { ok: false; reason: ActionLinkInvalidReason };
+
+/**
+ * Validates a loaded action link against the action and entity the caller
+ * expects. Centralizes every security check so the contractor page (and any
+ * future caller) behaves consistently:
+ *  - the link must exist,
+ *  - it must not be revoked,
+ *  - it must not be expired,
+ *  - if already used, only repeat-access actions may continue,
+ *  - it must match the expected action type, entity, contractor, and project.
+ */
+export function validateActionLink(
+  link: ContractorActionLink | null,
+  expected: {
+    action?: ActionLinkType;
+    entityId?: string;
+    contractorId?: string | null;
+    projectId?: string;
+  } = {},
+  now: Date = new Date(),
+): ActionLinkValidation {
+  if (!link) return { ok: false, reason: "missing" };
+
+  const status = effectiveActionLinkStatus(link, now);
+  if (status === "Revoked") return { ok: false, reason: "revoked" };
+  if (status === "Expired") return { ok: false, reason: "expired" };
+  if (status === "Used" && !allowsRepeatAccess(link.action_type)) {
+    return { ok: false, reason: "used" };
+  }
+
+  if (expected.action && link.action_type !== expected.action) {
+    return { ok: false, reason: "mismatch" };
+  }
+  if (expected.entityId && link.related_entity_id !== expected.entityId) {
+    return { ok: false, reason: "mismatch" };
+  }
+  if (
+    expected.contractorId !== undefined &&
+    link.contractor_id !== expected.contractorId
+  ) {
+    return { ok: false, reason: "mismatch" };
+  }
+  if (expected.projectId && link.project_id !== expected.projectId) {
+    return { ok: false, reason: "mismatch" };
+  }
+
+  return { ok: true };
+}

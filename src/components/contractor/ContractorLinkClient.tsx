@@ -14,8 +14,8 @@ import {
   getTradePhase,
 } from "@/lib/api";
 import {
-  allowsRepeatAccess,
-  effectiveActionLinkStatus,
+  validateActionLink,
+  type ActionLinkInvalidReason,
 } from "@/lib/actionLinks";
 import type {
   ContractorActionLink,
@@ -23,14 +23,7 @@ import type {
   TradePhaseWithRelations,
 } from "@/lib/database.types";
 
-type LinkError =
-  | "config"
-  | "missing"
-  | "expired"
-  | "revoked"
-  | "used"
-  | "unavailable"
-  | "load";
+type LinkError = ActionLinkInvalidReason | "config" | "unavailable" | "load";
 
 const ERROR_COPY: Record<LinkError, { title: string; body: string }> = {
   config: {
@@ -52,6 +45,10 @@ const ERROR_COPY: Record<LinkError, { title: string; body: string }> = {
   used: {
     title: "Already completed",
     body: "Thanks — this action has already been submitted. There's nothing more to do here.",
+  },
+  mismatch: {
+    title: "Link not valid",
+    body: "This link doesn't match the request it was created for. Please ask the project team for a new one.",
   },
   unavailable: {
     title: "Not available yet",
@@ -91,38 +88,51 @@ export function ContractorLinkClient({ token }: { token: string }) {
         await ensureAnonymousSession();
         const found = await getActionLinkByToken(token);
         if (!active) return;
-        if (!found) {
-          setError("missing");
-          return;
-        }
-        const status = effectiveActionLinkStatus(found);
-        if (status === "Revoked") {
-          setError("revoked");
-          return;
-        }
-        if (status === "Expired") {
-          setError("expired");
-          return;
-        }
-        if (status === "Used" && !allowsRepeatAccess(found.action_type)) {
-          setError("used");
-          return;
-        }
-        setLink(found);
 
-        if (found.action_type === "Schedule Confirmation") {
-          const p = await getTradePhase(found.related_entity_id);
+        // First pass: existence, expiry, revocation, and one-time-use checks.
+        const base = validateActionLink(found);
+        if (!base.ok) {
+          setError(base.reason);
+          return;
+        }
+        const link = found as ContractorActionLink;
+        setLink(link);
+
+        if (link.action_type === "Schedule Confirmation") {
+          const p = await getTradePhase(link.related_entity_id);
           if (!active) return;
           if (!p) {
             setError("missing");
             return;
           }
+          // Second pass: the link must match this entity, its contractor, and
+          // its project — so a token can't be reused against other data.
+          const match = validateActionLink(link, {
+            action: "Schedule Confirmation",
+            entityId: p.id,
+            contractorId: p.contractor_id,
+            projectId: p.project_id,
+          });
+          if (!match.ok) {
+            setError(match.reason);
+            return;
+          }
           setPhase(p);
-        } else if (found.action_type === "Punch Item Update") {
-          const pi = await getPunchItem(found.related_entity_id);
+        } else if (link.action_type === "Punch Item Update") {
+          const pi = await getPunchItem(link.related_entity_id);
           if (!active) return;
           if (!pi) {
             setError("missing");
+            return;
+          }
+          const match = validateActionLink(link, {
+            action: "Punch Item Update",
+            entityId: pi.id,
+            contractorId: pi.assigned_contractor_id,
+            projectId: pi.project_id,
+          });
+          if (!match.ok) {
+            setError(match.reason);
             return;
           }
           setPunchItem(pi);
