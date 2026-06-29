@@ -38,6 +38,9 @@ const icons = {
   materials: (
     <path d="M12 2 3 7v10l9 5 9-5V7l-9-5Zm0 2.3L18.5 8 12 11.7 5.5 8 12 4.3ZM5 9.7l6 3.4v6.6l-6-3.3V9.7Zm14 0v6.7l-6 3.3v-6.6l6-3.4Z" />
   ),
+  punch: (
+    <path d="M9 11l3 3 8-8 1.5 1.5L12 17l-4.5-4.5L9 11ZM4 4h8v2H4V4Zm0 5h6v2H4V9Zm0 5h6v2H4v-2Zm0 5h10v2H4v-2Z" />
+  ),
 };
 
 const NAV_ITEMS: NavItem[] = [
@@ -62,6 +65,11 @@ const NAV_ITEMS: NavItem[] = [
     label: "Materials",
     href: "/material-orders",
     icon: <Icon>{icons.materials}</Icon>,
+  },
+  {
+    label: "Punch List",
+    href: "/punch-items",
+    icon: <Icon>{icons.punch}</Icon>,
   },
 ];
 
