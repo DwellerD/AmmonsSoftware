@@ -13,7 +13,12 @@ import {
   type DocumentData,
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
-import { getDb, getFirebaseAuth } from "@/lib/firebase/client";
+import { getDb, getFirebaseAuth, getFirebaseStorage } from "@/lib/firebase/client";
+import {
+  getDownloadURL,
+  ref as storageRef,
+  uploadBytes,
+} from "firebase/storage";
 import type {
   ActivityAction,
   ActivityLog,
@@ -716,6 +721,27 @@ export async function listCompletionRecords(
 ): Promise<CompletionRecord[]> {
   const docs = await listForPhase(COLLECTIONS.completionRecords, tradePhaseId);
   return docs.map(mapCompletion);
+}
+
+/**
+ * Uploads completion photos to Firebase Storage under
+ * `completion/{tradePhaseId}/` and returns their download URLs. Used by the
+ * contractor submission flow before the Firestore record is written.
+ */
+export async function uploadCompletionPhotos(
+  tradePhaseId: string,
+  files: File[],
+): Promise<string[]> {
+  const storage = getFirebaseStorage();
+  const urls: string[] = [];
+  for (const [i, file] of files.entries()) {
+    const safeName = file.name.replace(/[^\w.\-]+/g, "_");
+    const path = `completion/${tradePhaseId}/${Date.now()}-${i}-${safeName}`;
+    const r = storageRef(storage, path);
+    await uploadBytes(r, file, { contentType: file.type });
+    urls.push(await getDownloadURL(r));
+  }
+  return urls;
 }
 
 export interface NewCompletionInput {
