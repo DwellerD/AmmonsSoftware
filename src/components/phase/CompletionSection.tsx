@@ -64,8 +64,8 @@ export function CompletionSection({
       const created = await createCompletionRecord({
         trade_phase_id: tradePhaseId,
         project_id: projectId,
-        note: note.trim() || undefined,
-        photo_url: photoUrl.trim() || undefined,
+        notes: note.trim() || undefined,
+        photo_urls: photoUrl.trim() ? [photoUrl.trim()] : undefined,
       });
       setRecords((prev) => [...prev, created]);
       setNote("");
@@ -101,14 +101,14 @@ export function CompletionSection({
                 key={r.id}
                 className="rounded-lg border border-ink-100 bg-ink-50/50 p-3"
               >
-                {r.note && (
+                {r.notes && (
                   <p className="whitespace-pre-wrap text-sm text-ink-800">
-                    {r.note}
+                    {r.notes}
                   </p>
                 )}
-                {r.photo_url && (
+                {r.photo_urls.length > 0 && (
                   <a
-                    href={r.photo_url}
+                    href={r.photo_urls[0]}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="mt-1 inline-block text-sm text-brand-600 hover:underline"
@@ -117,7 +117,7 @@ export function CompletionSection({
                   </a>
                 )}
                 <p className="mt-1 text-xs text-ink-500">
-                  Submitted {timeAgo(r.created_at)}
+                  Submitted {timeAgo(r.submitted_at)}
                 </p>
               </li>
             ))}

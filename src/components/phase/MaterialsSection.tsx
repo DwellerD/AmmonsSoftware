@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Field";
@@ -9,28 +9,46 @@ import {
   createMaterialOrder,
   listMaterialOrders,
   updateMaterialOrderStatus,
+  updateTradePhaseStatus,
 } from "@/lib/api";
 import {
   MATERIAL_ORDER_STATUSES,
   MATERIAL_ORDER_STATUS_STYLES,
 } from "@/lib/constants";
+import {
+  materialReadiness,
+  MATERIAL_READINESS_LABELS,
+  MATERIAL_READINESS_STYLES,
+} from "@/lib/materials";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
-import type { MaterialOrder, MaterialOrderStatus } from "@/lib/database.types";
+import type {
+  MaterialOrder,
+  MaterialOrderStatus,
+  TradePhaseStatus,
+} from "@/lib/database.types";
 
 /**
  * Material orders for a trade phase: list each order with its procurement /
  * delivery status, add new ones, and update status inline. Orders created here
  * are linked to the phase, its trade, and the project.
+ *
+ * A readiness banner rolls the orders up into a single state and lets the GC
+ * block the phase when materials are delayed, or move it to "Ready to Schedule"
+ * once everything has been received.
  */
 export function MaterialsSection({
   tradePhaseId,
   projectId,
   tradeId,
+  phaseStatus,
+  onPhaseStatusChange,
 }: {
   tradePhaseId: string;
   projectId: string;
   tradeId: string;
+  phaseStatus: TradePhaseStatus;
+  onPhaseStatusChange?: () => void;
 }) {
   const [items, setItems] = useState<MaterialOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +60,10 @@ export function MaterialsSection({
   const [expected, setExpected] = useState("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Phase-status action (block / ready to schedule) state.
+  const [phaseAction, setPhaseAction] = useState<TradePhaseStatus | null>(null);
+  const [phaseActionError, setPhaseActionError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -105,6 +127,35 @@ export function MaterialsSection({
     }
   }
 
+  // Roll the orders up into a single readiness state for the banner + actions.
+  const readiness = useMemo(() => materialReadiness(items), [items]);
+
+  // The GC can block on delays, or advance to scheduling once all received.
+  const canBlock =
+    readiness === "delayed" &&
+    phaseStatus !== "Blocked" &&
+    phaseStatus !== "Approved";
+  const canReady =
+    readiness === "received" &&
+    (phaseStatus === "Not Ready" ||
+      phaseStatus === "Materials Pending" ||
+      phaseStatus === "Blocked");
+
+  async function changePhaseStatus(next: TradePhaseStatus) {
+    setPhaseActionError(null);
+    setPhaseAction(next);
+    try {
+      await updateTradePhaseStatus(tradePhaseId, next);
+      onPhaseStatusChange?.();
+    } catch (err) {
+      setPhaseActionError(
+        err instanceof Error ? err.message : "Failed to update phase status.",
+      );
+    } finally {
+      setPhaseAction(null);
+    }
+  }
+
   return (
     <Card>
       <CardHeader className="flex items-center justify-between">
@@ -113,6 +164,47 @@ export function MaterialsSection({
       </CardHeader>
       <CardBody className="space-y-4">
         {error && <ErrorAlert message={error} />}
+
+        {!loading && items.length > 0 && (
+          <div className="space-y-3 rounded-lg border border-ink-100 bg-ink-50 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                  MATERIAL_READINESS_STYLES[readiness],
+                )}
+              >
+                {MATERIAL_READINESS_LABELS[readiness]}
+              </span>
+              <span className="text-xs text-ink-500">
+                {items.filter((m) => m.status === "Received").length}/
+                {items.filter((m) => m.status !== "Cancelled").length} received
+              </span>
+            </div>
+
+            {phaseActionError && <ErrorAlert message={phaseActionError} />}
+
+            {canBlock && (
+              <Button
+                size="sm"
+                variant="outline"
+                loading={phaseAction === "Blocked"}
+                onClick={() => changePhaseStatus("Blocked")}
+              >
+                Block phase — materials delayed
+              </Button>
+            )}
+            {canReady && (
+              <Button
+                size="sm"
+                loading={phaseAction === "Ready to Schedule"}
+                onClick={() => changePhaseStatus("Ready to Schedule")}
+              >
+                Mark Ready to Schedule
+              </Button>
+            )}
+          </div>
+        )}
 
         {loading ? (
           <div className="flex justify-center py-4">

@@ -29,6 +29,7 @@ export type ActivityAction =
   | "trade_phase_created"
   | "trade_phase_status_updated"
   | "material_order_added"
+  | "material_order_status_updated"
   | "completion_submitted"
   | "inspection_recorded"
   | "punch_item_created"
@@ -45,6 +46,13 @@ export type MaterialOrderStatus =
 
 /** Outcome of a GC inspection on a trade phase. */
 export type InspectionResult = "Passed" | "Failed" | "Needs Rework";
+
+/** Lifecycle of a completion submission (proof that work is done). */
+export type CompletionStatus =
+  | "Submitted"
+  | "Approved"
+  | "Rejected"
+  | "Needs Fix";
 
 /** Lifecycle of a punch-list item (a defect or fix to close out). */
 export type PunchItemStatus = "Open" | "In Progress" | "Resolved";
@@ -162,15 +170,23 @@ export interface MaterialOrder {
   updated_at: string;
 }
 
-/** Proof that work on a trade phase is complete (a note + optional photo). */
+/** Proof that work on a trade phase is complete: notes + photos in Storage. */
 export interface CompletionRecord {
   id: string;
   trade_phase_id: string;
   project_id: string;
-  note: string | null;
-  photo_url: string | null;
   submitted_by: string | null;
+  notes: string | null;
+  /** Firebase Storage download URLs for the uploaded completion photos. */
+  photo_urls: string[];
+  status: CompletionStatus;
+  submitted_at: string;
+  /** GC review notes, set when the submission is approved or rejected. */
+  review_notes: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
   created_at: string;
+  updated_at: string;
 }
 
 /** A GC inspection result recorded against a trade phase. */

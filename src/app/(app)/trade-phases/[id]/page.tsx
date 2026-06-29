@@ -239,6 +239,8 @@ export default function TradePhaseDetailPage() {
             tradePhaseId={phase.id}
             projectId={phase.project_id}
             tradeId={phase.trade_id}
+            phaseStatus={phase.status}
+            onPhaseStatusChange={refreshPhase}
           />
           <PunchItemsSection
             tradePhaseId={phase.id}

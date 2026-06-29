@@ -1,0 +1,27 @@
+rules_version = '2';
+
+// Firebase Storage security rules for TradeFlow.
+//
+// MVP policy: any signed-in user can read and write project files. This keeps
+// the contractor completion-photo upload flow simple while still requiring
+// authentication. Tighten before production (e.g. per-project membership,
+// content-type and size limits, role checks).
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Completion proof photos, organized by trade phase:
+    //   completion/{tradePhaseId}/{fileName}
+    match /completion/{tradePhaseId}/{fileName} {
+      allow read: if request.auth != null;
+      // Only allow reasonably-sized image uploads.
+      allow write: if request.auth != null
+        && request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // Any other authenticated read/write (future use).
+    match /{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

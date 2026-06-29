@@ -1,4 +1,5 @@
 import type {
+  CompletionStatus,
   InspectionResult,
   MaterialOrderStatus,
   PunchItemStatus,
@@ -118,6 +119,21 @@ export const INSPECTION_RESULT_STYLES: Record<InspectionResult, string> = {
   Passed: "bg-green-100 text-green-800",
   Failed: "bg-red-100 text-red-800",
   "Needs Rework": "bg-amber-100 text-amber-800",
+};
+
+/** Completion-submission lifecycle. */
+export const COMPLETION_STATUSES: CompletionStatus[] = [
+  "Submitted",
+  "Approved",
+  "Rejected",
+  "Needs Fix",
+];
+
+export const COMPLETION_STATUS_STYLES: Record<CompletionStatus, string> = {
+  Submitted: "bg-violet-100 text-violet-800",
+  Approved: "bg-green-100 text-green-800",
+  Rejected: "bg-red-100 text-red-800",
+  "Needs Fix": "bg-amber-100 text-amber-800",
 };
 
 /** Punch-item lifecycle. */

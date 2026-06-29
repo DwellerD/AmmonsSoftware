@@ -18,6 +18,7 @@ import type {
   ActivityAction,
   ActivityLog,
   CompletionRecord,
+  CompletionStatus,
   Contractor,
   Inspection,
   InspectionResult,
@@ -555,10 +556,16 @@ function mapCompletion(s: Snap): CompletionRecord {
     id: s.id,
     trade_phase_id: d.trade_phase_id,
     project_id: d.project_id,
-    note: d.note ?? null,
-    photo_url: d.photo_url ?? null,
     submitted_by: d.submitted_by ?? null,
+    notes: d.notes ?? null,
+    photo_urls: Array.isArray(d.photo_urls) ? d.photo_urls : [],
+    status: (d.status as CompletionStatus) ?? "Submitted",
+    submitted_at: toIso(d.submitted_at ?? d.created_at),
+    review_notes: d.review_notes ?? null,
+    reviewed_by: d.reviewed_by ?? null,
+    reviewed_at: d.reviewed_at ? toIso(d.reviewed_at) : null,
     created_at: toIso(d.created_at),
+    updated_at: toIso(d.updated_at ?? d.created_at),
   };
 }
 
@@ -689,7 +696,15 @@ export async function updateMaterialOrderStatus(
 ): Promise<MaterialOrder> {
   const ref = doc(getDb(), COLLECTIONS.materialOrders, id);
   await updateDoc(ref, { status, updated_at: serverTimestamp() });
-  return mapMaterialOrder((await getDoc(ref)) as Snap);
+  const order = mapMaterialOrder((await getDoc(ref)) as Snap);
+  await logActivity({
+    action_type: "material_order_status_updated",
+    entity_type: "material_order",
+    entity_id: order.id,
+    project_id: order.project_id,
+    description: `Material order "${order.name}" marked ${status}`,
+  });
+  return order;
 }
 
 // ---------------------------------------------------------------------------
@@ -706,13 +721,14 @@ export async function listCompletionRecords(
 export interface NewCompletionInput {
   trade_phase_id: string;
   project_id: string;
-  note?: string;
-  photo_url?: string;
+  notes?: string;
+  photo_urls?: string[];
 }
 
 /**
  * Records completion proof and advances the phase to "Submitted Complete"
- * (unless it has already been approved).
+ * (unless it has already been approved). Photos are uploaded to Firebase
+ * Storage first; their download URLs are stored on the record.
  */
 export async function createCompletionRecord(
   input: NewCompletionInput,
@@ -720,10 +736,16 @@ export async function createCompletionRecord(
   const ref = await addDoc(collection(getDb(), COLLECTIONS.completionRecords), {
     trade_phase_id: input.trade_phase_id,
     project_id: input.project_id,
-    note: input.note || null,
-    photo_url: input.photo_url || null,
     submitted_by: uid(),
+    notes: input.notes || null,
+    photo_urls: input.photo_urls ?? [],
+    status: "Submitted" as CompletionStatus,
+    submitted_at: serverTimestamp(),
+    review_notes: null,
+    reviewed_by: null,
+    reviewed_at: null,
     created_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
   });
   const record = mapCompletion((await getDoc(ref)) as Snap);
 

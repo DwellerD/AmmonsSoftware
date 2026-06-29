@@ -57,9 +57,12 @@ service cloud.firestore {
       allow read, write: if signedIn();
     }
 
+    // Completion proof: signed-in users can read, create, and update (the GC
+    // updates the review status on approval/rejection). Deletes are blocked so
+    // the submission history stays intact.
     match /completionRecords/{recordId} {
-      allow read, create: if signedIn();
-      allow update, delete: if false;
+      allow read, create, update: if signedIn();
+      allow delete: if false;
     }
 
     match /inspections/{inspectionId} {

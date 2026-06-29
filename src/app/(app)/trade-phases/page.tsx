@@ -13,14 +13,23 @@ import {
   LoadingState,
 } from "@/components/ui/States";
 import {
+  listMaterialOrders,
   listProjects,
   listTradePhases,
   listTrades,
   type TradeWithContractor,
 } from "@/lib/api";
 import { TRADE_PHASE_STATUSES } from "@/lib/constants";
+import {
+  materialReadiness,
+  MATERIAL_READINESS_LABELS,
+  MATERIAL_READINESS_STYLES,
+  type MaterialReadiness,
+} from "@/lib/materials";
 import { formatDate } from "@/lib/format";
+import { cn } from "@/lib/cn";
 import type {
+  MaterialOrder,
   Project,
   TradePhaseStatus,
   TradePhaseWithRelations,
@@ -37,6 +46,7 @@ export default function TradePhasesPage() {
   const [phases, setPhases] = useState<TradePhaseWithRelations[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [trades, setTrades] = useState<TradeWithContractor[]>([]);
+  const [orders, setOrders] = useState<MaterialOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,14 +60,16 @@ export default function TradePhasesPage() {
       setLoading(true);
       setError(null);
       try {
-        const [ph, p, t] = await Promise.all([
+        const [ph, p, t, o] = await Promise.all([
           listTradePhases(),
           listProjects(),
           listTrades(),
+          listMaterialOrders(),
         ]);
         setPhases(ph);
         setProjects(p);
         setTrades(t);
+        setOrders(o);
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Failed to load trade phases.",
@@ -75,6 +87,20 @@ export default function TradePhasesPage() {
       projectId ? trades.filter((t) => t.project_id === projectId) : trades,
     [trades, projectId],
   );
+
+  // Summarize each phase's material orders into a single readiness state.
+  const readinessByPhase = useMemo(() => {
+    const byPhase = new Map<string, MaterialOrder[]>();
+    for (const o of orders) {
+      if (!o.trade_phase_id) continue;
+      const list = byPhase.get(o.trade_phase_id) ?? [];
+      list.push(o);
+      byPhase.set(o.trade_phase_id, list);
+    }
+    const map = new Map<string, MaterialReadiness>();
+    for (const [pid, list] of byPhase) map.set(pid, materialReadiness(list));
+    return map;
+  }, [orders]);
 
   // Apply the active filters in memory.
   const visiblePhases = useMemo(
@@ -195,6 +221,21 @@ export default function TradePhasesPage() {
                         {formatDate(phase.scheduled_start_date)} →{" "}
                         {formatDate(phase.scheduled_end_date)}
                       </span>
+                      {(() => {
+                        const readiness =
+                          readinessByPhase.get(phase.id) ?? "none";
+                        if (readiness === "none") return null;
+                        return (
+                          <span
+                            className={cn(
+                              "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                              MATERIAL_READINESS_STYLES[readiness],
+                            )}
+                          >
+                            {MATERIAL_READINESS_LABELS[readiness]}
+                          </span>
+                        );
+                      })()}
                       <StatusBadge status={phase.status} />
                     </div>
                   </Link>
