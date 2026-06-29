@@ -1019,16 +1019,6 @@ export async function createPunchItem(
     project_id: item.project_id,
     description: `Punch item added: ${item.title}`,
   });
-  // Let the assigned contractor know they have a new item.
-  if (item.assigned_contractor_id) {
-    await createNotification({
-      recipient_id: item.assigned_contractor_id,
-      notification_type: "punch_item_assigned",
-      related_entity_type: "punch_item",
-      related_entity_id: item.id,
-      message: `New punch item assigned: ${item.title}`,
-    });
-  }
   return item;
 }
 

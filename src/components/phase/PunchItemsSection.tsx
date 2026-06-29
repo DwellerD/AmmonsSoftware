@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/Button";
 import { Field, Input, Select, Textarea } from "@/components/ui/Field";
 import { ErrorAlert, Spinner } from "@/components/ui/States";
 import {
+  createActionLink,
   createPunchItem,
   listContractors,
   listPunchItems,
   updatePunchItemStatus,
 } from "@/lib/api";
+import { dispatchNotification } from "@/lib/notifications";
 import {
   PUNCH_ITEM_STATUSES,
   PUNCH_ITEM_STATUS_STYLES,
@@ -117,6 +119,28 @@ export function PunchItemsSection({
         due_date: dueDate || undefined,
         status,
       });
+      // Notify the assigned contractor with an action link to update the item.
+      if (created.assigned_contractor_id) {
+        const link = await createActionLink({
+          action_type: "Punch Item Update",
+          related_entity_id: created.id,
+          contractor_id: created.assigned_contractor_id,
+          project_id: projectId,
+        });
+        await dispatchNotification({
+          recipientId: created.assigned_contractor_id,
+          type: "punch_item_assigned",
+          relatedEntityType: "punch_item",
+          relatedEntityId: created.id,
+          context: {
+            subject: created.title,
+            dueDate: created.due_date
+              ? formatDate(created.due_date)
+              : null,
+          },
+          actionLinkToken: link.token,
+        });
+      }
       setItems((prev) => [created, ...prev]);
       resetForm();
       setShowForm(false);
