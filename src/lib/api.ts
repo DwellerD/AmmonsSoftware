@@ -43,6 +43,7 @@ import type {
   MaterialOrder,
   MaterialOrderStatus,
   Notification,
+  NotificationDeliveryStatus,
   NotificationStatus,
   NotificationType,
   Project,
@@ -1108,6 +1109,8 @@ function mapNotification(s: Snap): Notification {
     related_entity_id: d.related_entity_id,
     message: d.message,
     status: (d.status ?? "unread") as NotificationStatus,
+    action_link_token: d.action_link_token ?? null,
+    email_status: (d.email_status ?? null) as NotificationDeliveryStatus | null,
     created_at: toIso(d.created_at),
   };
 }
@@ -1118,6 +1121,8 @@ export interface NewNotificationInput {
   related_entity_type: string;
   related_entity_id: string;
   message: string;
+  action_link_token?: string | null;
+  email_status?: NotificationDeliveryStatus | null;
 }
 
 export async function createNotification(
@@ -1130,6 +1135,8 @@ export async function createNotification(
     related_entity_id: input.related_entity_id,
     message: input.message,
     status: "unread" as NotificationStatus,
+    action_link_token: input.action_link_token ?? null,
+    email_status: input.email_status ?? null,
     created_at: serverTimestamp(),
   });
   return mapNotification((await getDoc(ref)) as Snap);

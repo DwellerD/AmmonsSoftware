@@ -176,12 +176,20 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   completion_submitted: "Completion submitted",
   punch_item_assigned: "Punch item assigned",
   material_delayed: "Material delayed",
+  schedule_confirmation_requested: "Schedule confirmation requested",
+  schedule_confirmation_declined: "Schedule declined",
+  completion_approved: "Completion approved",
+  completion_rejected: "Completion rejected",
 };
 
 export const NOTIFICATION_TYPE_STYLES: Record<NotificationType, string> = {
   completion_submitted: "bg-violet-100 text-violet-800",
   punch_item_assigned: "bg-sky-100 text-sky-800",
   material_delayed: "bg-amber-100 text-amber-800",
+  schedule_confirmation_requested: "bg-blue-100 text-blue-800",
+  schedule_confirmation_declined: "bg-rose-100 text-rose-800",
+  completion_approved: "bg-emerald-100 text-emerald-800",
+  completion_rejected: "bg-orange-100 text-orange-800",
 };
 
 /* ---------------------------------------------------------------------------

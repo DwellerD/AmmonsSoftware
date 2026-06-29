@@ -238,20 +238,32 @@ export interface PunchItem {
   resolved_at: string | null;
 }
 
-/** Kinds of in-app notification we record for Sprint 2 events. */
+/** Kinds of in-app notification we record. */
 export type NotificationType =
   | "completion_submitted"
   | "punch_item_assigned"
-  | "material_delayed";
+  | "material_delayed"
+  | "schedule_confirmation_requested"
+  | "schedule_confirmation_declined"
+  | "completion_approved"
+  | "completion_rejected";
 
 /** Read state of a notification record. */
 export type NotificationStatus = "unread" | "read";
 
+/** Outcome of a (prepared) delivery channel for a notification. */
+export type NotificationDeliveryStatus =
+  | "skipped"
+  | "queued"
+  | "sent"
+  | "failed"
+  | "not_enabled";
+
 /**
- * An in-app notification record. Sprint 2 does not send real SMS/email/push;
- * these records simply capture what *would* be sent, so the workflow can be
- * built and tested. Recipient may be a user or contractor id (or null for a
- * broadcast to whoever is managing the project).
+ * An in-app notification record. The app does not send real SMS/email/push;
+ * these records capture what *would* be sent (plus the prepared delivery
+ * status), so the workflow can be built and tested. Recipient may be a user or
+ * contractor id (or null for a broadcast to whoever is managing the project).
  */
 export interface Notification {
   id: string;
@@ -261,6 +273,10 @@ export interface Notification {
   related_entity_id: string;
   message: string;
   status: NotificationStatus;
+  /** Token of a related contractor action link, when the notification has one. */
+  action_link_token: string | null;
+  /** Prepared email delivery outcome (no real email is sent in this build). */
+  email_status: NotificationDeliveryStatus | null;
   created_at: string;
 }
 
