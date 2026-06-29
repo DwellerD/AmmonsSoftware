@@ -35,6 +35,10 @@ yarn-error.log*
 # ...but DO commit the example so others know which variables are required.
 !.env.local.example
 
+# Firebase service-account keys (NEVER commit these)
+*-firebase-adminsdk-*.json
+serviceAccount*.json
+
 # vercel
 .vercel
 
