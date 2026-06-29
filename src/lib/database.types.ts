@@ -230,6 +230,8 @@ export interface PunchItem {
   due_date: string | null;
   priority: PunchPriority;
   status: PunchItemStatus;
+  /** Latest note left by the contractor when updating the item (Sprint 3). */
+  contractor_notes: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

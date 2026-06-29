@@ -2,18 +2,24 @@
 
 import { useEffect, useState } from "react";
 import { ScheduleConfirmationAction } from "@/components/contractor/ScheduleConfirmationAction";
+import { PunchItemUpdateAction } from "@/components/contractor/PunchItemUpdateAction";
 import { Spinner } from "@/components/ui/States";
 import {
   ensureAnonymousSession,
   isFirebaseConfigured,
 } from "@/lib/firebase/client";
-import { getActionLinkByToken, getTradePhase } from "@/lib/api";
+import {
+  getActionLinkByToken,
+  getPunchItem,
+  getTradePhase,
+} from "@/lib/api";
 import {
   allowsRepeatAccess,
   effectiveActionLinkStatus,
 } from "@/lib/actionLinks";
 import type {
   ContractorActionLink,
+  PunchItem,
   TradePhaseWithRelations,
 } from "@/lib/database.types";
 
@@ -67,6 +73,7 @@ export function ContractorLinkClient({ token }: { token: string }) {
   const [error, setError] = useState<LinkError | null>(null);
   const [link, setLink] = useState<ContractorActionLink | null>(null);
   const [phase, setPhase] = useState<TradePhaseWithRelations | null>(null);
+  const [punchItem, setPunchItem] = useState<PunchItem | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -111,6 +118,14 @@ export function ContractorLinkClient({ token }: { token: string }) {
             return;
           }
           setPhase(p);
+        } else if (found.action_type === "Punch Item Update") {
+          const pi = await getPunchItem(found.related_entity_id);
+          if (!active) return;
+          if (!pi) {
+            setError("missing");
+            return;
+          }
+          setPunchItem(pi);
         } else {
           // Other action types are wired up in later prompts.
           setError("unavailable");
@@ -152,6 +167,13 @@ export function ContractorLinkClient({ token }: { token: string }) {
               Confirm your schedule
             </h1>
             <ScheduleConfirmationAction link={link} phase={phase} />
+          </div>
+        ) : link && link.action_type === "Punch Item Update" && punchItem ? (
+          <div className="space-y-4">
+            <h1 className="text-lg font-semibold text-ink-900">
+              Punch item update
+            </h1>
+            <PunchItemUpdateAction link={link} item={punchItem} />
           </div>
         ) : null}
       </div>

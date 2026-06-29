@@ -623,6 +623,7 @@ function mapPunchItem(s: Snap): PunchItem {
     due_date: d.due_date ?? null,
     priority: (d.priority ?? "Medium") as PunchPriority,
     status: d.status as PunchItemStatus,
+    contractor_notes: d.contractor_notes ?? null,
     created_by: d.created_by ?? null,
     created_at: toIso(d.created_at),
     updated_at: toIso(d.updated_at),
@@ -1051,6 +1052,41 @@ export async function updatePunchItemStatus(
       description: `Punch item resolved: ${item.title}`,
     });
   }
+  return item;
+}
+
+/** Loads a single punch item by id, or null if it doesn't exist. */
+export async function getPunchItem(id: string): Promise<PunchItem | null> {
+  const ref = doc(getDb(), COLLECTIONS.punchItems, id);
+  const snap = await getDoc(ref);
+  return snap.exists() ? mapPunchItem(snap as Snap) : null;
+}
+
+/**
+ * Applies a contractor's update to a punch item (Sprint 3): saves their note,
+ * sets the status (In Progress or Resolved), and writes an activity log entry.
+ * Used by the tokenized contractor action link flow.
+ */
+export async function applyContractorPunchUpdate(
+  id: string,
+  status: Extract<PunchItemStatus, "In Progress" | "Resolved">,
+  note?: string | null,
+): Promise<PunchItem> {
+  const ref = doc(getDb(), COLLECTIONS.punchItems, id);
+  await updateDoc(ref, {
+    status,
+    contractor_notes: note?.trim() ? note.trim() : null,
+    resolved_at: status === "Resolved" ? serverTimestamp() : null,
+    updated_at: serverTimestamp(),
+  });
+  const item = mapPunchItem((await getDoc(ref)) as Snap);
+  await logActivity({
+    action_type: "punch_item_updated",
+    entity_type: "punch_item",
+    entity_id: item.id,
+    project_id: item.project_id,
+    description: `Contractor marked punch item ${status}: ${item.title}`,
+  });
   return item;
 }
 

@@ -20,6 +20,7 @@ import {
 import { useAuth } from "@/components/providers/AuthProvider";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { PunchItemLinkButton } from "@/components/phase/PunchItemLinkButton";
 import type {
   Contractor,
   PunchItem,
@@ -193,6 +194,18 @@ export function PunchItemsSection({
                     {crew && <span>Assigned: {crew}</span>}
                     {i.due_date && <span>Due {formatDate(i.due_date)}</span>}
                   </div>
+                  {i.contractor_notes && (
+                    <p className="rounded bg-ink-50 px-2 py-1 text-xs text-ink-600">
+                      Contractor note: {i.contractor_notes}
+                    </p>
+                  )}
+                  {canManage && !closed && (
+                    <PunchItemLinkButton
+                      punchItemId={i.id}
+                      projectId={projectId}
+                      contractorId={i.assigned_contractor_id}
+                    />
+                  )}
                 </li>
               );
             })}
