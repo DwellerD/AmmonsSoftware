@@ -12,9 +12,14 @@ import {
   listProjects,
   listTradePhases,
   listTrades,
+  setDocumentPinned,
   type TradeWithContractor,
 } from "@/lib/api";
-import { DOCUMENT_TYPES, DOCUMENT_TYPE_STYLES } from "@/lib/constants";
+import {
+  DOCUMENT_TYPES,
+  DOCUMENT_TYPE_STYLES,
+  PINNABLE_PLAN_TYPES,
+} from "@/lib/constants";
 import { formatDate } from "@/lib/format";
 import { isImageFile } from "@/lib/documents";
 import { cn } from "@/lib/cn";
@@ -95,6 +100,29 @@ export default function DocumentsPage() {
     () => (projectId ? trades.filter((t) => t.project_id === projectId) : trades),
     [trades, projectId],
   );
+
+  // Pinned blueprints & layouts get their own quick-access section up top.
+  const pinnedPlans = useMemo(
+    () =>
+      documents
+        .filter(
+          (d) =>
+            d.pinned &&
+            (PINNABLE_PLAN_TYPES as readonly string[]).includes(
+              d.document_type,
+            ) &&
+            (!projectId || d.project_id === projectId),
+        )
+        .sort((a, b) => (a.created_at < b.created_at ? 1 : -1)),
+    [documents, projectId],
+  );
+
+  async function handleTogglePin(d: ProjectDocument) {
+    const updated = await setDocumentPinned(d.id, !d.pinned);
+    setDocuments((prev) =>
+      prev.map((x) => (x.id === updated.id ? updated : x)),
+    );
+  }
 
   // Apply filters, then sort pinned-first (newest within each group).
   const visibleDocuments = useMemo(() => {
@@ -198,92 +226,153 @@ export default function DocumentsPage() {
         <LoadingState message="Loading documents…" />
       ) : error ? (
         <ErrorAlert message={error} />
-      ) : visibleDocuments.length === 0 ? (
-        <EmptyState
-          title={
-            documents.length === 0
-              ? "No documents yet"
-              : "No documents match these filters"
-          }
-          description={
-            documents.length === 0
-              ? "Upload your first blueprint, contract, or permit to start the vault."
-              : "Try clearing a filter to see more."
-          }
-          action={
-            documents.length === 0 && canManage ? (
-              <Link href="/documents/new">
-                <Button>Upload document</Button>
-              </Link>
-            ) : undefined
-          }
-        />
       ) : (
-        <Card>
-          <CardBody className="p-0">
-            <ul className="divide-y divide-ink-100">
-              {visibleDocuments.map((d) => (
-                <li key={d.id} className="px-5 py-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        {d.pinned && (
-                          <span
-                            aria-label="Pinned"
-                            title="Pinned"
-                            className="text-amber-500"
-                          >
-                            ★
-                          </span>
-                        )}
+        <>
+          {pinnedPlans.length > 0 && (
+            <section className="mb-6">
+              <h2 className="mb-2 text-sm font-semibold text-ink-700">
+                Pinned blueprints & layouts
+              </h2>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {pinnedPlans.map((d) => (
+                  <Card key={d.id}>
+                    <CardBody className="space-y-1">
+                      <div className="flex items-start justify-between gap-2">
                         <a
                           href={d.file_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="truncate font-medium text-ink-900 hover:underline"
+                          className="font-medium text-ink-900 hover:underline"
                         >
-                          {d.name}
+                          ★ {d.name}
                         </a>
+                        <span
+                          className={cn(
+                            "inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                            DOCUMENT_TYPE_STYLES[d.document_type],
+                          )}
+                        >
+                          {d.document_type}
+                        </span>
                       </div>
-                      <p className="mt-0.5 truncate text-sm text-ink-500">
+                      <p className="truncate text-sm text-ink-500">
                         {projectNames.get(d.project_id) ?? "Unknown project"}
-                        {d.trade_phase_id
-                          ? ` · ${phaseTitles.get(d.trade_phase_id) ?? "Phase"}`
-                          : d.trade_id
-                            ? ` · ${tradeNames.get(d.trade_id) ?? "Trade"}`
-                            : ""}
                       </p>
-                      {d.tags.length > 0 && (
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {d.tags.map((tag) => (
-                            <span
-                              key={tag}
-                              className="rounded bg-ink-100 px-1.5 py-0.5 text-xs text-ink-600"
+                      {canManage && (
+                        <button
+                          type="button"
+                          onClick={() => handleTogglePin(d)}
+                          className="text-xs font-medium text-brand-600 hover:underline"
+                        >
+                          Unpin
+                        </button>
+                      )}
+                    </CardBody>
+                  </Card>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {visibleDocuments.length === 0 ? (
+            <EmptyState
+              title={
+                documents.length === 0
+                  ? "No documents yet"
+                  : "No documents match these filters"
+              }
+              description={
+                documents.length === 0
+                  ? "Upload your first blueprint, contract, or permit to start the vault."
+                  : "Try clearing a filter to see more."
+              }
+              action={
+                documents.length === 0 && canManage ? (
+                  <Link href="/documents/new">
+                    <Button>Upload document</Button>
+                  </Link>
+                ) : undefined
+              }
+            />
+          ) : (
+            <Card>
+              <CardBody className="p-0">
+                <ul className="divide-y divide-ink-100">
+                  {visibleDocuments.map((d) => (
+                    <li key={d.id} className="px-5 py-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            {d.pinned && (
+                              <span
+                                aria-label="Pinned"
+                                title="Pinned"
+                                className="text-amber-500"
+                              >
+                                ★
+                              </span>
+                            )}
+                            <a
+                              href={d.file_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="truncate font-medium text-ink-900 hover:underline"
                             >
-                              #{tag}
-                            </span>
-                          ))}
+                              {d.name}
+                            </a>
+                          </div>
+                          <p className="mt-0.5 truncate text-sm text-ink-500">
+                            {projectNames.get(d.project_id) ?? "Unknown project"}
+                            {d.trade_phase_id
+                              ? ` · ${phaseTitles.get(d.trade_phase_id) ?? "Phase"}`
+                              : d.trade_id
+                                ? ` · ${tradeNames.get(d.trade_id) ?? "Trade"}`
+                                : ""}
+                          </p>
+                          {d.tags.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {d.tags.map((tag) => (
+                                <span
+                                  key={tag}
+                                  className="rounded bg-ink-100 px-1.5 py-0.5 text-xs text-ink-600"
+                                >
+                                  #{tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                    <span
-                      className={cn(
-                        "inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-                        DOCUMENT_TYPE_STYLES[d.document_type],
-                      )}
-                    >
-                      {d.document_type}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-xs text-ink-400">
-                    {isImageFile(d.file_url) ? "Image" : "File"} · uploaded{" "}
-                    {formatDate(d.created_at)}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </CardBody>
-        </Card>
+                        <div className="flex shrink-0 flex-col items-end gap-2">
+                          <span
+                            className={cn(
+                              "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                              DOCUMENT_TYPE_STYLES[d.document_type],
+                            )}
+                          >
+                            {d.document_type}
+                          </span>
+                          {canManage && (
+                            <button
+                              type="button"
+                              onClick={() => handleTogglePin(d)}
+                              className="text-xs font-medium text-brand-600 hover:underline"
+                            >
+                              {d.pinned ? "Unpin" : "Pin"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="mt-2 text-xs text-ink-400">
+                        {isImageFile(d.file_url) ? "Image" : "File"} · uploaded{" "}
+                        {formatDate(d.created_at)}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </CardBody>
+            </Card>
+          )}
+        </>
       )}
     </PageContainer>
   );

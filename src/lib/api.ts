@@ -1262,3 +1262,24 @@ export async function createDocument(
   });
   return document;
 }
+
+/**
+ * Pins or unpins a document. Updates Firestore and writes an activity log entry
+ * (document_pinned / document_unpinned) so the change shows in the feed.
+ */
+export async function setDocumentPinned(
+  id: string,
+  pinned: boolean,
+): Promise<ProjectDocument> {
+  const ref = doc(getDb(), COLLECTIONS.documents, id);
+  await updateDoc(ref, { pinned, updated_at: serverTimestamp() });
+  const document = mapDocument((await getDoc(ref)) as Snap);
+  await logActivity({
+    action_type: pinned ? "document_pinned" : "document_unpinned",
+    entity_type: "document",
+    entity_id: document.id,
+    project_id: document.project_id,
+    description: `${pinned ? "Pinned" : "Unpinned"} document: ${document.name}`,
+  });
+  return document;
+}
