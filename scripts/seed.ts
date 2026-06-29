@@ -331,11 +331,274 @@ async function main() {
     });
   }
 
+  // 6) Material orders (varied statuses incl. delayed/received/arriving) -----
+  const materialDefs: {
+    name: string;
+    supplier: string;
+    phaseIndex: number;
+    trade: string;
+    status: string;
+    expected: string;
+    actual: string | null;
+  }[] = [
+    {
+      name: "Framing lumber package",
+      supplier: "Springfield Building Supply",
+      phaseIndex: 0,
+      trade: "Framing",
+      status: "Received",
+      expected: dateOffset(-4),
+      actual: dateOffset(-4),
+    },
+    {
+      name: "PEX tubing + fittings",
+      supplier: "ClearFlow Supply",
+      phaseIndex: 2,
+      trade: "Plumbing",
+      status: "Ordered",
+      expected: dateOffset(2),
+      actual: null,
+    },
+    {
+      name: "200A electrical panel",
+      supplier: "BrightSpark Distribution",
+      phaseIndex: 3,
+      trade: "Electrical",
+      status: "Delayed",
+      expected: dateOffset(-1),
+      actual: null,
+    },
+    {
+      name: "Ductwork + registers",
+      supplier: "Summit Mechanical Supply",
+      phaseIndex: 4,
+      trade: "HVAC",
+      status: "Arriving",
+      expected: dateOffset(0),
+      actual: null,
+    },
+    {
+      name: "Roofing trusses",
+      supplier: "Springfield Building Supply",
+      phaseIndex: 1,
+      trade: "Framing",
+      status: "Delayed",
+      expected: dateOffset(-2),
+      actual: null,
+    },
+    {
+      name: "Interior paint (40 units)",
+      supplier: "ProCoat Paints",
+      phaseIndex: 6,
+      trade: "Paint",
+      status: "Received",
+      expected: dateOffset(-12),
+      actual: dateOffset(-11),
+    },
+    {
+      name: "LVP flooring pallets",
+      supplier: "FloorWorks",
+      phaseIndex: 7,
+      trade: "Flooring",
+      status: "Received",
+      expected: dateOffset(-6),
+      actual: dateOffset(-6),
+    },
+  ];
+  for (const m of materialDefs) {
+    await db.collection("materialOrders").add({
+      name: m.name,
+      supplier: m.supplier,
+      expected_arrival_date: m.expected,
+      actual_arrival_date: m.actual,
+      status: m.status,
+      notes: null,
+      project_id: projectId,
+      trade_phase_id: phases[m.phaseIndex].id,
+      trade_id: tradeIdByName.get(m.trade)!,
+      created_by: null,
+      created_at: now(),
+      updated_at: now(),
+    });
+  }
+
+  // 7) Completion submissions ------------------------------------------------
+  // Paint phase is awaiting review; the approved plumbing phase has a reviewed
+  // record so the approval history is visible.
+  await db.collection("completionRecords").add({
+    trade_phase_id: phases[6].id,
+    project_id: projectId,
+    submitted_by: null,
+    notes: "Final coat complete in all units on floors 1-3. Touch-ups done.",
+    photo_urls: [],
+    status: "Submitted",
+    submitted_at: now(),
+    review_notes: null,
+    reviewed_by: null,
+    reviewed_at: null,
+    created_at: now(),
+    updated_at: now(),
+  });
+  await db.collection("completionRecords").add({
+    trade_phase_id: phases[8].id,
+    project_id: projectId,
+    submitted_by: null,
+    notes: "Fixtures set and tested in units 101-110. No leaks.",
+    photo_urls: [],
+    status: "Approved",
+    submitted_at: now(),
+    review_notes: "Verified on walkthrough — approved.",
+    reviewed_by: null,
+    reviewed_at: now(),
+    created_at: now(),
+    updated_at: now(),
+  });
+
+  // 8) Punch items (varied priority/status, incl. an overdue + a resolved) ---
+  const punchDefs: {
+    phaseIndex: number;
+    title: string;
+    description: string;
+    contractor: string | null;
+    priority: string;
+    status: string;
+    due: string;
+    resolved: boolean;
+  }[] = [
+    {
+      phaseIndex: 0,
+      title: "Missing hurricane ties on north wall",
+      description: "Add ties per plan detail S-4 before inspection.",
+      contractor: "Framing",
+      priority: "High",
+      status: "Open",
+      due: dateOffset(2),
+      resolved: false,
+    },
+    {
+      phaseIndex: 8,
+      title: "Leak at unit 103 sink trap",
+      description: "Slow drip under the kitchen sink; reseat the trap.",
+      contractor: "Plumbing",
+      priority: "Critical",
+      status: "In Progress",
+      due: dateOffset(-1),
+      resolved: false,
+    },
+    {
+      phaseIndex: 7,
+      title: "Scuff on LVP near unit 104 entry",
+      description: "Replace the scuffed plank by the entry threshold.",
+      contractor: null,
+      priority: "Low",
+      status: "Open",
+      due: dateOffset(5),
+      resolved: false,
+    },
+    {
+      phaseIndex: 6,
+      title: "Paint drip on unit 207 trim",
+      description: "Sand and recoat the window trim.",
+      contractor: null,
+      priority: "Medium",
+      status: "Resolved",
+      due: dateOffset(-3),
+      resolved: true,
+    },
+  ];
+  for (const p of punchDefs) {
+    await db.collection("punchItems").add({
+      trade_phase_id: phases[p.phaseIndex].id,
+      project_id: projectId,
+      title: p.title,
+      description: p.description,
+      assigned_contractor_id: contractorFor(p.contractor),
+      due_date: p.due,
+      priority: p.priority,
+      status: p.status,
+      resolved_at: p.resolved ? now() : null,
+      created_by: null,
+      created_at: now(),
+      updated_at: now(),
+    });
+  }
+
+  // 9) Recent Sprint 2 activity + notifications ------------------------------
+  const sprint2Activity = [
+    {
+      action_type: "material_order_status_updated",
+      entity_type: "material_order",
+      entity_id: projectId,
+      description: 'Material order "200A electrical panel" marked Delayed',
+    },
+    {
+      action_type: "completion_submitted",
+      entity_type: "trade_phase",
+      entity_id: phases[6].id,
+      description: "Completion proof submitted",
+    },
+    {
+      action_type: "punch_item_created",
+      entity_type: "punch_item",
+      entity_id: phases[0].id,
+      description: "Punch item added: Missing hurricane ties on north wall",
+    },
+    {
+      action_type: "inspection_recorded",
+      entity_type: "trade_phase",
+      entity_id: phases[8].id,
+      description: "Completion approved",
+    },
+  ];
+  for (const a of sprint2Activity) {
+    await db.collection("activityLogs").add({
+      ...a,
+      project_id: projectId,
+      user_id: null,
+      created_at: now(),
+    });
+  }
+
+  const notificationDefs = [
+    {
+      recipient_id: null,
+      notification_type: "completion_submitted",
+      related_entity_type: "completion_record",
+      related_entity_id: phases[6].id,
+      message: "Completion proof was submitted for review.",
+    },
+    {
+      recipient_id: contractorFor("Plumbing"),
+      notification_type: "punch_item_assigned",
+      related_entity_type: "punch_item",
+      related_entity_id: phases[8].id,
+      message: "New punch item assigned: Leak at unit 103 sink trap",
+    },
+    {
+      recipient_id: null,
+      notification_type: "material_delayed",
+      related_entity_type: "material_order",
+      related_entity_id: phases[3].id,
+      message: 'Material order "200A electrical panel" is delayed.',
+    },
+  ];
+  for (const n of notificationDefs) {
+    await db.collection("notifications").add({
+      ...n,
+      status: "unread",
+      created_at: now(),
+    });
+  }
+
   console.log("✓ Seed complete:");
   console.log(`  • 1 project: ${DEMO_PROJECT_NAME}`);
   console.log(`  • ${contractorDefs.length} contractors`);
   console.log(`  • ${tradeDefs.length} trades`);
   console.log(`  • ${phases.length} trade phases`);
+  console.log(`  • ${materialDefs.length} material orders`);
+  console.log(`  • 2 completion submissions`);
+  console.log(`  • ${punchDefs.length} punch items`);
+  console.log(`  • ${notificationDefs.length} notifications`);
 }
 
 main().catch((err) => {
