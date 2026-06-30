@@ -6,6 +6,10 @@ import { createActionLink } from "@/lib/api";
 import { buildActionLinkUrl } from "@/lib/actionLinks";
 
 /**
+ * FUTURE FEATURE:
+ * This control is intentionally not rendered in the current MVP (no contractor
+ * self-service). It is preserved for a later version with a contractor portal.
+ *
  * GC-side control to generate a Punch Item Update link for the assigned
  * contractor. Renders inline within a punch item row. Disabled (hidden) when
  * there is no contractor to send it to.

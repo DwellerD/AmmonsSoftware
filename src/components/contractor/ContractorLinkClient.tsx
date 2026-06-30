@@ -2,24 +2,23 @@
 
 import { useEffect, useState } from "react";
 import { ScheduleConfirmationAction } from "@/components/contractor/ScheduleConfirmationAction";
-import { PunchItemUpdateAction } from "@/components/contractor/PunchItemUpdateAction";
+// FUTURE FEATURE:
+// The contractor Punch Item Update flow is disabled for the current MVP (no
+// contractor self-service). The component and its data helper are preserved for
+// a later version with a contractor portal.
+// import { PunchItemUpdateAction } from "@/components/contractor/PunchItemUpdateAction";
 import { Spinner } from "@/components/ui/States";
 import {
   ensureAnonymousSession,
   isFirebaseConfigured,
 } from "@/lib/firebase/client";
-import {
-  getActionLinkByToken,
-  getPunchItem,
-  getTradePhase,
-} from "@/lib/api";
+import { getActionLinkByToken, getTradePhase } from "@/lib/api";
 import {
   validateActionLink,
   type ActionLinkInvalidReason,
 } from "@/lib/actionLinks";
 import type {
   ContractorActionLink,
-  PunchItem,
   TradePhaseWithRelations,
 } from "@/lib/database.types";
 
@@ -70,7 +69,6 @@ export function ContractorLinkClient({ token }: { token: string }) {
   const [error, setError] = useState<LinkError | null>(null);
   const [link, setLink] = useState<ContractorActionLink | null>(null);
   const [phase, setPhase] = useState<TradePhaseWithRelations | null>(null);
-  const [punchItem, setPunchItem] = useState<PunchItem | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -118,26 +116,11 @@ export function ContractorLinkClient({ token }: { token: string }) {
             return;
           }
           setPhase(p);
-        } else if (link.action_type === "Punch Item Update") {
-          const pi = await getPunchItem(link.related_entity_id);
-          if (!active) return;
-          if (!pi) {
-            setError("missing");
-            return;
-          }
-          const match = validateActionLink(link, {
-            action: "Punch Item Update",
-            entityId: pi.id,
-            contractorId: pi.assigned_contractor_id,
-            projectId: pi.project_id,
-          });
-          if (!match.ok) {
-            setError(match.reason);
-            return;
-          }
-          setPunchItem(pi);
         } else {
-          // Other action types are wired up in later prompts.
+          // FUTURE FEATURE:
+          // Only Schedule Confirmation links are handled in the current MVP.
+          // Punch Item Update (and other contractor self-service flows) are
+          // deferred to a later contractor-portal version.
           setError("unavailable");
         }
       } catch {
@@ -177,13 +160,6 @@ export function ContractorLinkClient({ token }: { token: string }) {
               Confirm your schedule
             </h1>
             <ScheduleConfirmationAction link={link} phase={phase} />
-          </div>
-        ) : link && link.action_type === "Punch Item Update" && punchItem ? (
-          <div className="space-y-4">
-            <h1 className="text-lg font-semibold text-ink-900">
-              Punch item update
-            </h1>
-            <PunchItemUpdateAction link={link} item={punchItem} />
           </div>
         ) : null}
       </div>

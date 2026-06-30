@@ -6,15 +6,19 @@ import { useState } from "react";
 import { cn } from "@/lib/cn";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { LogoutButton } from "@/components/auth/LogoutButton";
-import { canManage, USER_ROLES } from "@/lib/constants";
+import { USER_ROLES } from "@/lib/constants";
 
 /**
  * AppShell renders the navigation chrome (sidebar on desktop, collapsible top
  * bar on mobile) around every authenticated page.
  *
  * The active page is highlighted by comparing the current pathname against
- * each nav item's href. Management-only destinations are hidden from
- * contractors so they see a focused, role-appropriate navigation.
+ * each nav item's href. The navigation is focused on the GC's daily workflow.
+ *
+ * FUTURE FEATURE:
+ * The `managerOnly` flag below is preserved for a later version that adds a
+ * contractor portal / self-service experience with role-based navigation. It
+ * is not used to filter the nav in the current GC-only MVP.
  */
 
 interface NavItem {
@@ -61,13 +65,11 @@ const NAV_ITEMS: NavItem[] = [
     label: "Projects",
     href: "/projects",
     icon: <Icon>{icons.projects}</Icon>,
-    managerOnly: true,
   },
   {
     label: "Trades",
     href: "/trades",
     icon: <Icon>{icons.trades}</Icon>,
-    managerOnly: true,
   },
   {
     label: "Trade Phases",
@@ -75,16 +77,9 @@ const NAV_ITEMS: NavItem[] = [
     icon: <Icon>{icons.phases}</Icon>,
   },
   {
-    label: "Contractors",
-    href: "/contractors",
-    icon: <Icon>{icons.contractors}</Icon>,
-    managerOnly: true,
-  },
-  {
     label: "Materials",
     href: "/material-orders",
     icon: <Icon>{icons.materials}</Icon>,
-    managerOnly: true,
   },
   {
     label: "Punch List",
@@ -95,14 +90,22 @@ const NAV_ITEMS: NavItem[] = [
     label: "Document Vault",
     href: "/documents",
     icon: <Icon>{icons.documents}</Icon>,
-    managerOnly: true,
   },
   {
-    label: "Notifications",
-    href: "/notifications",
-    icon: <Icon>{icons.notifications}</Icon>,
-    managerOnly: true,
+    label: "Contractors",
+    href: "/contractors",
+    icon: <Icon>{icons.contractors}</Icon>,
   },
+  // FUTURE FEATURE:
+  // The Notifications history screen is intentionally removed from the primary
+  // navigation for the current MVP (the GC does not need automated messaging
+  // yet). The page still exists and can be re-linked when real email/SMS
+  // delivery or a contractor portal is added.
+  // {
+  //   label: "Notifications",
+  //   href: "/notifications",
+  //   icon: <Icon>{icons.notifications}</Icon>,
+  // },
 ];
 
 function Icon({ children }: { children: React.ReactNode }) {
@@ -126,11 +129,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const roleLabel =
     USER_ROLES.find((r) => r.value === role)?.label ?? "Member";
 
-  // Contractors get a focused nav; managers see every destination.
-  const allowManage = canManage(role);
-  const visibleNavItems = NAV_ITEMS.filter(
-    (item) => allowManage || !item.managerOnly,
-  );
+  // FUTURE FEATURE:
+  // A contractor portal with role-filtered navigation (using the `managerOnly`
+  // flag) is deferred. The current MVP is GC-only, so every authenticated user
+  // sees the full workflow navigation.
+  const visibleNavItems = NAV_ITEMS;
 
   // A nav link is active when the path matches or is nested under its href.
   function isActive(href: string) {

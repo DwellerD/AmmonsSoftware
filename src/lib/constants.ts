@@ -230,12 +230,21 @@ export const PINNABLE_PLAN_TYPES: DocumentType[] = ["Blueprint", "Layout"];
  * Sprint 3: Contractor action links.
  * ------------------------------------------------------------------------- */
 
-/** All contractor action link types. */
+/**
+ * Contractor action link types that are active in the current MVP.
+ *
+ * FUTURE FEATURE:
+ * Only "Schedule Confirmation" is used today. "Completion Submission",
+ * "Punch Item Update", and "Document Request" are deferred (no contractor
+ * self-service portal yet). The full union still lives in `ActionLinkType`
+ * (database.types) and helper utilities, so they can be re-enabled here when a
+ * contractor portal is added back.
+ */
 export const ACTION_LINK_TYPES: ActionLinkType[] = [
   "Schedule Confirmation",
-  "Completion Submission",
-  "Punch Item Update",
-  "Document Request",
+  // "Completion Submission",
+  // "Punch Item Update",
+  // "Document Request",
 ];
 
 /** All contractor action link statuses. */

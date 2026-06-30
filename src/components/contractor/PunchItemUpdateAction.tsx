@@ -12,6 +12,13 @@ import { allowsRepeatAccess } from "@/lib/actionLinks";
 import type { ContractorActionLink, PunchItem } from "@/lib/database.types";
 
 /**
+ * FUTURE FEATURE:
+ * This component is intentionally not used in the current MVP. The GC does not
+ * need a contractor self-service portal yet, so contractor punch-item updates
+ * are disabled (no links are generated and ContractorLinkClient no longer
+ * routes to it). It is preserved for a later version that adds contractor
+ * self-service.
+ *
  * Contractor-facing punch item update. Shows the item details and lets the
  * contractor leave a note and mark it In Progress or Resolved. Saves to
  * Firestore and (for one-time links) marks the link used.

@@ -1,5 +1,8 @@
 import { createNotification, type NewNotificationInput } from "@/lib/api";
-import { buildActionLinkUrl } from "@/lib/actionLinks";
+// FUTURE FEATURE:
+// buildActionLinkUrl embedded an action link inside outbound email/SMS bodies.
+// Re-enable this import when real messaging delivery is added back.
+// import { buildActionLinkUrl } from "@/lib/actionLinks";
 import type {
   Notification,
   NotificationDeliveryStatus,
@@ -7,16 +10,17 @@ import type {
 } from "@/lib/database.types";
 
 /**
- * Notification delivery service.
+ * Notification service.
  *
- * Central place to create notification records, format their messages, attach
- * related entity context, and *prepare* email/SMS delivery. This build does not
- * actually send email or SMS — those channels return a prepared payload with a
- * status so the workflow is ready to wire up to a real provider later without
- * touching the call sites.
+ * For the current GC-focused MVP this only creates internal Firestore
+ * notification records (which feed the dashboard/activity history) and formats
+ * their messages. It does NOT send email/SMS/push.
  *
- * Enable email by setting NEXT_PUBLIC_NOTIFICATIONS_EMAIL_ENABLED=true once a
- * provider is connected. SMS is intentionally left "not enabled".
+ * FUTURE FEATURE:
+ * The email/SMS "prepare" helpers below are intentionally kept but no longer
+ * called by dispatchNotification. They are preserved as the seam for wiring a
+ * real provider (e.g. Cloud Functions + SendGrid/Twilio) in a later version,
+ * when automated messaging and/or a contractor portal are added.
  */
 
 /** True when email delivery has been switched on via env config. */
@@ -128,36 +132,22 @@ export interface DispatchResult {
 }
 
 /**
- * Creates a notification record and prepares its delivery channels. Always
- * writes the Firestore record (so it shows in the notification history) even
- * when email/SMS are not configured.
+ * Records a notification. For the current MVP this only writes the internal
+ * Firestore record (so the event shows in dashboard/activity history). It does
+ * not send anything.
+ *
+ * FUTURE FEATURE:
+ * Email/SMS preparation and dispatch are intentionally disabled here. When real
+ * delivery is added back, re-introduce prepareEmailDelivery/prepareSmsDelivery
+ * (and the action-link URL) and return them alongside the record. The input
+ * already accepts recipientEmail/recipientPhone/actionLinkToken so call sites
+ * won't need to change.
  */
 export async function dispatchNotification(
   input: DispatchNotificationInput,
-): Promise<DispatchResult> {
+): Promise<Notification> {
   const message =
     input.message ?? formatNotificationMessage(input.type, input.context);
-
-  const origin =
-    typeof window !== "undefined" ? window.location.origin : "";
-  const linkUrl =
-    input.actionLinkToken && origin
-      ? buildActionLinkUrl(origin, input.actionLinkToken)
-      : null;
-
-  const email = prepareEmailDelivery({
-    to: input.recipientEmail,
-    subject: input.context?.subject
-      ? `TradeFlow: ${input.context.subject}`
-      : "TradeFlow notification",
-    body: message,
-    linkUrl,
-  });
-  const sms = prepareSmsDelivery({
-    to: input.recipientPhone,
-    body: message,
-    linkUrl,
-  });
 
   const record: NewNotificationInput = {
     recipient_id: input.recipientId ?? null,
@@ -166,9 +156,8 @@ export async function dispatchNotification(
     related_entity_id: input.relatedEntityId,
     message,
     action_link_token: input.actionLinkToken ?? null,
-    email_status: email.status,
+    // FUTURE FEATURE: no messaging is sent yet, so there is no email status.
+    email_status: null,
   };
-  const notification = await createNotification(record);
-
-  return { notification, email, sms };
+  return createNotification(record);
 }

@@ -96,8 +96,8 @@ npm install
    `ammonssoftware`.
 2. **Build → Authentication → Get started**, then enable the
    **Email/Password** sign-in provider. Also enable the **Anonymous** provider —
-   contractor action links sign visitors in anonymously so their reads/writes
-   satisfy the `signedIn()` Firestore rules without a full account.
+   the schedule-confirmation action link signs visitors in anonymously so their
+   reads/writes satisfy the `signedIn()` Firestore rules without a full account.
 3. **Build → Firestore Database → Create database** (start in production mode;
    the rules in this repo lock it down to signed-in users).
 4. **Build → Storage → Get started** to provision the default Cloud Storage
@@ -125,7 +125,7 @@ cp .env.local.example .env.local
 | `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | ✅ | Storage bucket (Sprint 2) |
 | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | ✅ | Cloud messaging / project number |
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | ✅ | Identifies this web app |
-| `NEXT_PUBLIC_NOTIFICATIONS_EMAIL_ENABLED` | Optional | Set to `true` to mark notification email delivery as “queued” once a real email provider is wired. Defaults off — records are still created. |
+| `NEXT_PUBLIC_NOTIFICATIONS_EMAIL_ENABLED` | — | **Reserved / disabled.** A future hook for email delivery. The current MVP does not send email or SMS, so this has no effect today. |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Only for seeding | Path to a service-account key so `npm run seed` (Admin SDK) can write data. **Server-only — never expose to the browser.** |
 
 The `NEXT_PUBLIC_FIREBASE_*` values are public by design (the browser SDK needs
@@ -213,26 +213,27 @@ already exists.
   `storage.rules` allow signed-in users to read, restrict completion-photo
   uploads to image files up to 15 MB, and restrict document uploads to any file
   type up to 25 MB.
-- **Contractor action links** — instead of giving subcontractors full accounts,
-  the GC generates a tokenized link for a specific action (schedule
-  confirmation, punch update). The token doubles as the Firestore document id so
-  an unauthenticated visitor can fetch exactly one link by URL; `actionLinks.ts`
-  generates, validates, and expires them (status `Active` → `Used` /
-  `Expired` / `Revoked`, with a default 14-day TTL). The public screen confirms
-  the action against the expected entity and marks the link used.
-- **Notification delivery structure** — `notifications.ts` is a delivery-service
-  scaffold. Every workflow event (`dispatchNotification`) always writes a
-  Firestore `notifications` record and *prepares* email/SMS delivery: email is
-  marked `queued` when `NEXT_PUBLIC_NOTIFICATIONS_EMAIL_ENABLED=true` (otherwise
-  `skipped`), and SMS is always `not_enabled`. No messages are actually sent yet
-  — this gives a single seam to plug a real provider (e.g. Cloud Functions +
-  SendGrid/Twilio) into later.
+- **Contractor action links (schedule confirmation only)** — instead of giving
+  subcontractors full accounts, the GC generates a tokenized link for a single
+  action. In the current MVP this is used for **schedule confirmation**: the
+  token doubles as the Firestore document id so an unauthenticated visitor can
+  fetch exactly one link by URL; `actionLinks.ts` generates, validates, and
+  expires it (status `Active` → `Used` / `Expired` / `Revoked`, default 14-day
+  TTL). The public screen confirms the schedule against the expected phase and
+  marks the link used. *Other action-link types (punch update, document
+  request, completion submission) are scaffolded but disabled — see below.*
+- **Internal notification records** — `notifications.ts` records a Firestore
+  `notifications` document for key workflow events (`dispatchNotification`) so
+  they appear in history. **No email/SMS/push is sent.** The email/SMS
+  “prepare” helpers are preserved as a future seam but are not called. There is
+  no automated messaging in this build.
 - **Security rules** — `firestore.rules` restricts collections to signed-in
   users (users only write their own profile; activity logs are append-only;
   inspections are create-only). `contractorActionLinks` allow an unauthenticated
-  `get` by token (so a contractor can open their link) but restrict listing and
-  writes to signed-in users. `storage.rules` similarly gate uploads to signed-in
-  users. Project-scoped restrictions are planned for a later sprint.
+  `get` by token (so a contractor can open their schedule-confirmation link) but
+  restrict listing and writes to signed-in users. `storage.rules` similarly gate
+  uploads to signed-in users. Project-scoped restrictions are planned for a
+  later sprint.
 - **Route protection** — auth is client-side. The `(app)` layout is a client
   component that waits for auth state, then redirects unauthenticated visitors
   to `/login`.
@@ -318,48 +319,40 @@ Built on top of the Sprint 1 and Sprint 2 foundations:
 - ✅ **Documents on the phase page** — each trade phase detail page lists the
   documents attached to that phase and lets the GC upload a new one inline
   (pre-scoped to that project + phase).
-- ✅ **Contractor action links** — the GC generates a tokenized link for a
-  single action without giving the subcontractor an account. Links carry a type
-  (`Schedule Confirmation`, `Completion Submission`, `Punch Item Update`,
-  `Document Request`), an expiration (default 14 days), and a status
-  (`Active` → `Used` / `Expired` / `Revoked`). The public `/link/[token]`
-  screen validates the link against its expected entity and signs the visitor
-  in anonymously to perform the action.
 - ✅ **Schedule confirmation flow** — the GC requests a contractor confirm a
-  scheduled date; the contractor opens the link on their phone and confirms or
-  declines (with a reason). The phase records the confirmation status and note,
-  and the GC sees pending and declined confirmations on the dashboard.
-- ✅ **Punch item update flow** — the GC can hand a contractor a link to update
-  a specific punch item; the contractor adds a note and marks it
-  `In Progress` or `Resolved`. Contractor notes flow back to the phase and the
-  dashboard surfaces unresolved contractor updates.
-- ✅ **Action link security checks** — `validateActionLink()` centralizes
-  existence, revoked, expired, used (for single-use actions), and
-  entity-match checks, with clear per-reason error screens. Firestore rules
-  allow a token `get` but restrict listing and writes.
-- ✅ **Notification workflow structure** — a `dispatchNotification()` delivery
-  service always records a Firestore notification and prepares email/SMS
-  delivery (email `queued`/`skipped`, SMS `not_enabled`). Workflows fire
-  notifications for schedule confirmation requests, declines, punch-item
-  assignments (with the action link), and completion approvals/rejections.
-- ✅ **Notification history** — the Notifications screen lists every record with
-  recipient, type, related entity, message, prepared delivery status, and
-  timestamp, filterable by status and type.
-- ✅ **Dashboard updates** — pinned documents, recently uploaded documents,
-  pending and declined contractor confirmations, unresolved contractor punch
-  updates, and recent notifications.
-- ✅ **Role-aware navigation** — management-only destinations (Projects, Trades,
-  Contractors, Materials, Document Vault, Notifications) are hidden from the
-  `contractor` role.
+  scheduled date; the contractor opens a tokenized link on their phone (no
+  account needed) and confirms or declines with a reason. The phase records the
+  confirmation status and note. `validateActionLink()` centralizes the link
+  security checks (existence, revoked, expired, used, entity-match) with clear
+  per-reason error screens, and Firestore rules allow a token `get` but restrict
+  listing and writes.
+- ✅ **Internal notification records** — workflow events still write a Firestore
+  notification record (visible on the Notifications screen, which is kept on
+  disk for dev/testing). **No email/SMS/push is sent.**
 - ✅ **Updated Storage rules** + updated seed data covering all of the above.
+
+> #### Scope-tightened for the GC MVP (disabled, code preserved)
+>
+> The following were scaffolded but are **intentionally turned off** in the
+> current build because the GC does not need automated messaging or a
+> contractor self-service portal yet. The code is preserved (marked
+> `// FUTURE FEATURE:`) so it can be re-enabled later:
+>
+> - **Automated messaging** — real email/SMS/push delivery. `dispatchNotification`
+>   now only records a notification; the email/SMS “prepare” helpers are kept but
+>   not called. The dashboard messaging/notification cards and the Notifications
+>   nav entry are removed.
+> - **Contractor portal beyond schedule confirmation** — the punch-item update
+>   link flow (`PunchItemUpdateAction`, `PunchItemLinkButton`) is disabled; punch
+>   items are managed by the GC only. Contractor notes already in the data still
+>   display read-only.
+> - **Extra action-link types** — only `Schedule Confirmation` is active.
+>   `Completion Submission`, `Punch Item Update`, and `Document Request` remain in
+>   the type union and helpers but are commented out of `ACTION_LINK_TYPES`.
 
 ### What's **not** included in Sprint 3
 
-- Full SMS automation and real email sending — delivery is *prepared* and
-  recorded, but no provider is wired (no messages actually go out)
 - Document versioning, preview/annotation, or markup
-- A `Completion Submission` / `Document Request` action-link UI (the types
-  exist; only schedule confirmation and punch update have screens)
 - Per-project / per-role data restrictions (rules are still permissive beyond
   the action-link token check)
 

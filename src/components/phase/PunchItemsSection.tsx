@@ -6,13 +6,11 @@ import { Button } from "@/components/ui/Button";
 import { Field, Input, Select, Textarea } from "@/components/ui/Field";
 import { ErrorAlert, Spinner } from "@/components/ui/States";
 import {
-  createActionLink,
   createPunchItem,
   listContractors,
   listPunchItems,
   updatePunchItemStatus,
 } from "@/lib/api";
-import { dispatchNotification } from "@/lib/notifications";
 import {
   PUNCH_ITEM_STATUSES,
   PUNCH_ITEM_STATUS_STYLES,
@@ -22,7 +20,14 @@ import {
 import { useAuth } from "@/components/providers/AuthProvider";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
-import { PunchItemLinkButton } from "@/components/phase/PunchItemLinkButton";
+// FUTURE FEATURE:
+// Contractor self-service punch updates (a tokenized link + assignment
+// notification) are disabled for the current GC-focused MVP. The GC manages
+// punch items directly. Re-enable createActionLink/dispatchNotification and the
+// PunchItemLinkButton when a contractor portal is added back.
+// import { createActionLink } from "@/lib/api";
+// import { dispatchNotification } from "@/lib/notifications";
+// import { PunchItemLinkButton } from "@/components/phase/PunchItemLinkButton";
 import type {
   Contractor,
   PunchItem,
@@ -119,28 +124,33 @@ export function PunchItemsSection({
         due_date: dueDate || undefined,
         status,
       });
-      // Notify the assigned contractor with an action link to update the item.
-      if (created.assigned_contractor_id) {
-        const link = await createActionLink({
-          action_type: "Punch Item Update",
-          related_entity_id: created.id,
-          contractor_id: created.assigned_contractor_id,
-          project_id: projectId,
-        });
-        await dispatchNotification({
-          recipientId: created.assigned_contractor_id,
-          type: "punch_item_assigned",
-          relatedEntityType: "punch_item",
-          relatedEntityId: created.id,
-          context: {
-            subject: created.title,
-            dueDate: created.due_date
-              ? formatDate(created.due_date)
-              : null,
-          },
-          actionLinkToken: link.token,
-        });
-      }
+      // FUTURE FEATURE:
+      // When a contractor was assigned, the app previously generated a
+      // tokenized "Punch Item Update" action link and sent the contractor an
+      // assignment notification so they could update the item themselves. This
+      // contractor self-service flow is disabled for the current GC-focused
+      // MVP. Creating the punch item still logs activity for history. Re-enable
+      // when a contractor portal is added back:
+      //
+      // if (created.assigned_contractor_id) {
+      //   const link = await createActionLink({
+      //     action_type: "Punch Item Update",
+      //     related_entity_id: created.id,
+      //     contractor_id: created.assigned_contractor_id,
+      //     project_id: projectId,
+      //   });
+      //   await dispatchNotification({
+      //     recipientId: created.assigned_contractor_id,
+      //     type: "punch_item_assigned",
+      //     relatedEntityType: "punch_item",
+      //     relatedEntityId: created.id,
+      //     context: {
+      //       subject: created.title,
+      //       dueDate: created.due_date ? formatDate(created.due_date) : null,
+      //     },
+      //     actionLinkToken: link.token,
+      //   });
+      // }
       setItems((prev) => [created, ...prev]);
       resetForm();
       setShowForm(false);
@@ -223,13 +233,12 @@ export function PunchItemsSection({
                       Contractor note: {i.contractor_notes}
                     </p>
                   )}
-                  {canManage && !closed && (
-                    <PunchItemLinkButton
-                      punchItemId={i.id}
-                      projectId={projectId}
-                      contractorId={i.assigned_contractor_id}
-                    />
-                  )}
+                  {/*
+                    FUTURE FEATURE:
+                    A per-item "copy contractor update link" button was removed
+                    for the current MVP (no contractor self-service). Restore
+                    <PunchItemLinkButton /> here with a contractor portal.
+                  */}
                 </li>
               );
             })}

@@ -22,10 +22,14 @@ import type {
 /**
  * Notification history screen (GC view).
  *
- * The app records notifications (it does not send real SMS/email/push yet) so
- * the team can verify the right events fire. Each row shows the recipient,
- * type, related entity, message, prepared delivery status, and timestamp.
- * Filters narrow the list by status and type. Records can be marked read.
+ * Lists internal notification records (recipient, type, related entity,
+ * message, and timestamp) with status/type filters. Records can be marked read.
+ *
+ * FUTURE FEATURE:
+ * The app does NOT send email/SMS/push in the current MVP — these are internal
+ * records only, and this screen is intentionally kept out of the primary
+ * navigation. Re-add a delivery-status column (and the nav entry) when real
+ * messaging is wired up.
  */
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -159,9 +163,6 @@ export default function NotificationsPage() {
                       {n.recipient_id ? `To ${n.recipient_id}` : "Broadcast"}
                       {` · ${n.related_entity_type}`}
                       {` · ${timeAgo(n.created_at)}`}
-                      {n.email_status && n.email_status !== "skipped"
-                        ? ` · email ${n.email_status}`
-                        : ""}
                     </p>
                   </div>
                   {n.status === "unread" && (
