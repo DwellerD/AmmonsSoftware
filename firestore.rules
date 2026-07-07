@@ -2,8 +2,8 @@ rules_version = '2';
 
 // Firestore security rules for PhaseBinder.
 //
-// This ruleset keeps gc_site_super access fully intact while reducing broad
-// write permissions for non-manager roles.
+// Multi-tenant isolation: each signed-in account can only read/write documents
+// it owns.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -11,96 +11,138 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function currentUserDocPath() {
-      return /databases/$(database)/documents/users/$(request.auth.uid);
+    function ownsResource(field) {
+      return signedIn() && resource.data[field] == request.auth.uid;
     }
 
-    function currentUserRole() {
-      return signedIn() && exists(currentUserDocPath())
-        ? get(currentUserDocPath()).data.role
-        : null;
+    function createsOwned(field) {
+      return signedIn() && request.resource.data[field] == request.auth.uid;
     }
 
-    function canManage() {
+    function projectPath(projectId) {
+      return /databases/$(database)/documents/projects/$(projectId);
+    }
+
+    function tradePath(tradeId) {
+      return /databases/$(database)/documents/trades/$(tradeId);
+    }
+
+    function phasePath(phaseId) {
+      return /databases/$(database)/documents/tradePhases/$(phaseId);
+    }
+
+    function ownsProject(projectId) {
       return signedIn() &&
-        currentUserRole() in ['admin', 'gc_site_super', 'internal_team'];
+        projectId != null &&
+        exists(projectPath(projectId)) &&
+        get(projectPath(projectId)).data.created_by == request.auth.uid;
+    }
+
+    function ownsTrade(tradeId) {
+      return signedIn() &&
+        tradeId != null &&
+        exists(tradePath(tradeId)) &&
+        get(tradePath(tradeId)).data.created_by == request.auth.uid;
+    }
+
+    function ownsPhase(phaseId) {
+      return signedIn() &&
+        phaseId != null &&
+        exists(phasePath(phaseId)) &&
+        get(phasePath(phaseId)).data.created_by == request.auth.uid;
     }
 
     // User profile documents are keyed by auth uid.
-    // Managers can read all profiles; users can always read/update their own.
     match /users/{userId} {
-      allow read: if canManage() || (signedIn() && request.auth.uid == userId);
+      allow read: if signedIn() && request.auth.uid == userId;
       allow create, update: if signedIn() && request.auth.uid == userId;
       allow delete: if false;
     }
 
-    // Core workflow data is manager-managed. This preserves full gc_site_super
-    // capabilities and limits mutation for non-manager roles.
+    // Core workflow data is owner-scoped.
     match /projects/{projectId} {
-      allow read, write: if canManage();
+      allow read, update, delete: if ownsResource('created_by');
+      allow create: if createsOwned('created_by');
     }
 
     match /contractors/{contractorId} {
-      allow read, write: if canManage();
+      allow read, update, delete: if ownsResource('created_by');
+      allow create: if createsOwned('created_by');
     }
 
     match /trades/{tradeId} {
-      allow read, write: if canManage();
+      allow read, update, delete: if ownsResource('created_by');
+      allow create: if createsOwned('created_by') &&
+        ownsProject(request.resource.data.project_id);
     }
 
     match /tradePhases/{phaseId} {
-      allow read, write: if canManage();
+      allow read, update, delete: if ownsResource('created_by');
+      allow create: if createsOwned('created_by') &&
+        ownsProject(request.resource.data.project_id) &&
+        ownsTrade(request.resource.data.trade_id);
     }
 
     // Append-only audit trail.
     match /activityLogs/{logId} {
-      allow read, create: if canManage();
+      allow read: if ownsResource('user_id');
+      allow create: if createsOwned('user_id');
       allow update, delete: if false;
     }
 
     match /materialOrders/{orderId} {
-      allow read, write: if canManage();
+      allow read, update, delete: if ownsResource('created_by');
+      allow create: if createsOwned('created_by') &&
+        ownsProject(request.resource.data.project_id) &&
+        (
+          request.resource.data.trade_phase_id == null ||
+          ownsPhase(request.resource.data.trade_phase_id)
+        );
     }
 
     match /punchItems/{punchItemId} {
-      allow read, write: if canManage();
+      allow read, update, delete: if ownsResource('created_by');
+      allow create: if createsOwned('created_by') &&
+        ownsProject(request.resource.data.project_id) &&
+        ownsPhase(request.resource.data.trade_phase_id);
     }
 
     match /completionRecords/{recordId} {
-      allow read, create, update: if canManage();
+      allow read, update: if ownsResource('submitted_by');
+      allow create: if createsOwned('submitted_by') &&
+        ownsProject(request.resource.data.project_id) &&
+        ownsPhase(request.resource.data.trade_phase_id);
       allow delete: if false;
     }
 
     match /inspections/{inspectionId} {
-      allow read, create: if canManage();
+      allow read: if ownsResource('inspector_id');
+      allow create: if createsOwned('inspector_id') &&
+        ownsProject(request.resource.data.project_id) &&
+        ownsPhase(request.resource.data.trade_phase_id);
       allow update, delete: if false;
     }
 
-    // Managers can send and update notifications. Recipients may read and mark
-    // their own records as read.
+    // Owner-scoped notifications.
     match /notifications/{notificationId} {
-      allow read: if canManage() ||
-        (signedIn() && resource.data.recipient_id == request.auth.uid);
-      allow create: if canManage();
-      allow update: if canManage() ||
-        (signedIn() &&
-          resource.data.recipient_id == request.auth.uid &&
-          request.resource.data.recipient_id == resource.data.recipient_id &&
-          request.resource.data.type == resource.data.type &&
-          request.resource.data.related_entity_type == resource.data.related_entity_type &&
-          request.resource.data.related_entity_id == resource.data.related_entity_id);
+      allow read, update: if ownsResource('user_id');
+      allow create: if createsOwned('user_id');
       allow delete: if false;
     }
 
     match /documents/{documentId} {
-      allow read, write: if canManage();
+      allow read, update, delete: if ownsResource('uploaded_by');
+      allow create: if createsOwned('uploaded_by') &&
+        ownsProject(request.resource.data.project_id);
     }
 
     // Tokenized links: direct doc get stays public-by-token; management is
-    // manager-only.
+    // owner-only.
     match /contractorActionLinks/{token} {
       allow get: if true;
-      allow list, create, update: if canManage();
+      allow list, update: if ownsResource('created_by');
+      allow create: if createsOwned('created_by') &&
+        ownsProject(request.resource.data.project_id);
       allow delete: if false;
     }
   }

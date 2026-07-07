@@ -5,8 +5,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  limit as fsLimit,
-  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -101,6 +99,12 @@ type Snap = QueryDocumentSnapshot<DocumentData>;
 /** Current signed-in user's id, used to stamp created_by / user_id. */
 function uid(): string | null {
   return getFirebaseAuth().currentUser?.uid ?? null;
+}
+
+function requireUid(): string {
+  const id = uid();
+  if (!id) throw new Error("You must be signed in.");
+  return id;
 }
 
 /** Converts a Firestore Timestamp (or string) to an ISO date string. */
@@ -231,10 +235,13 @@ function mapActivity(s: Snap): ActivityLog {
 // ---------------------------------------------------------------------------
 
 export async function listProjects(): Promise<Project[]> {
+  const userId = requireUid();
   const snap = await getDocs(
-    query(collection(getDb(), COLLECTIONS.projects), orderBy("created_at", "desc")),
+    query(collection(getDb(), COLLECTIONS.projects), where("created_by", "==", userId)),
   );
-  return snap.docs.map(mapProject);
+  return snap.docs
+    .map(mapProject)
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 }
 
 export async function getProject(id: string): Promise<Project | null> {
@@ -277,13 +284,16 @@ export async function createProject(input: NewProjectInput): Promise<Project> {
 // ---------------------------------------------------------------------------
 
 export async function listContractors(): Promise<Contractor[]> {
+  const userId = requireUid();
   const snap = await getDocs(
     query(
       collection(getDb(), COLLECTIONS.contractors),
-      orderBy("company_name", "asc"),
+      where("created_by", "==", userId),
     ),
   );
-  return snap.docs.map(mapContractor);
+  return snap.docs
+    .map(mapContractor)
+    .sort((a, b) => a.company_name.localeCompare(b.company_name));
 }
 
 export interface NewContractorInput {
@@ -364,14 +374,17 @@ export async function listTrades(
   projectId?: string,
 ): Promise<TradeWithContractor[]> {
   const db = getDb();
+  const userId = requireUid();
   // Load trades and contractors, then join in memory.
   const [tradeSnap, contractors] = await Promise.all([
-    getDocs(query(collection(db, COLLECTIONS.trades), orderBy("name", "asc"))),
+    getDocs(query(collection(db, COLLECTIONS.trades), where("created_by", "==", userId))),
     listContractors(),
   ]);
   const contractorById = new Map(contractors.map((c) => [c.id, c]));
 
-  let trades = tradeSnap.docs.map(mapTrade);
+  let trades = tradeSnap.docs
+    .map(mapTrade)
+    .sort((a, b) => a.name.localeCompare(b.name));
   if (projectId) trades = trades.filter((t) => t.project_id === projectId);
 
   return trades.map((t) => ({
@@ -524,18 +537,19 @@ export async function listTradePhases(
   filters: PhaseFilters = {},
 ): Promise<TradePhaseWithRelations[]> {
   const db = getDb();
+  const userId = requireUid();
   // Load phases plus the collections we need to resolve names, then join.
   const [phaseSnap, tradeSnap, contractorSnap, projectSnap] = await Promise.all(
     [
       getDocs(
         query(
           collection(db, COLLECTIONS.tradePhases),
-          orderBy("created_at", "desc"),
+          where("created_by", "==", userId),
         ),
       ),
-      getDocs(collection(db, COLLECTIONS.trades)),
-      getDocs(collection(db, COLLECTIONS.contractors)),
-      getDocs(collection(db, COLLECTIONS.projects)),
+      getDocs(query(collection(db, COLLECTIONS.trades), where("created_by", "==", userId))),
+      getDocs(query(collection(db, COLLECTIONS.contractors), where("created_by", "==", userId))),
+      getDocs(query(collection(db, COLLECTIONS.projects), where("created_by", "==", userId))),
     ],
   );
 
@@ -550,9 +564,11 @@ export async function listTradePhases(
     phaseSnap.docs.map((s) => applyAutomaticNeedsInspection(mapPhase(s), today)),
   );
 
-  let phases = normalizedPhases.map((phase) =>
+  let phases = normalizedPhases
+    .map((phase) =>
     attachRelations(phase, trades, contractors, projects),
-  );
+    )
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 
   // Apply filters in memory (keeps us free of composite indexes).
   if (filters.projectId)
@@ -694,14 +710,17 @@ export async function extendTradePhaseEndDate(
 // ---------------------------------------------------------------------------
 
 export async function listRecentActivity(limit = 10): Promise<ActivityLog[]> {
+  const userId = requireUid();
   const snap = await getDocs(
     query(
       collection(getDb(), COLLECTIONS.activityLogs),
-      orderBy("created_at", "desc"),
-      fsLimit(limit),
+      where("user_id", "==", userId),
     ),
   );
-  return snap.docs.map(mapActivity);
+  return snap.docs
+    .map(mapActivity)
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+    .slice(0, limit);
 }
 
 // ===========================================================================
@@ -823,7 +842,10 @@ export interface MaterialOrderFilters {
 export async function listMaterialOrders(
   filters: MaterialOrderFilters = {},
 ): Promise<MaterialOrder[]> {
-  const snap = await getDocs(collection(getDb(), COLLECTIONS.materialOrders));
+  const userId = requireUid();
+  const snap = await getDocs(
+    query(collection(getDb(), COLLECTIONS.materialOrders), where("created_by", "==", userId)),
+  );
   let orders = snap.docs
     .map(mapMaterialOrder)
     .sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
@@ -1188,7 +1210,10 @@ export interface PunchItemFilters {
 export async function listAllPunchItems(
   filters: PunchItemFilters = {},
 ): Promise<PunchItem[]> {
-  const snap = await getDocs(collection(getDb(), COLLECTIONS.punchItems));
+  const userId = requireUid();
+  const snap = await getDocs(
+    query(collection(getDb(), COLLECTIONS.punchItems), where("created_by", "==", userId)),
+  );
   let items = snap.docs
     .map(mapPunchItem)
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
@@ -1369,6 +1394,7 @@ export async function createNotification(
   input: NewNotificationInput,
 ): Promise<Notification> {
   const ref = await addDoc(collection(getDb(), COLLECTIONS.notifications), {
+    user_id: uid(),
     recipient_id: input.recipient_id ?? null,
     notification_type: input.notification_type,
     related_entity_type: input.related_entity_type,
@@ -1384,7 +1410,10 @@ export async function createNotification(
 
 /** Lists all notification records, newest first. */
 export async function listNotifications(): Promise<Notification[]> {
-  const snap = await getDocs(collection(getDb(), COLLECTIONS.notifications));
+  const userId = requireUid();
+  const snap = await getDocs(
+    query(collection(getDb(), COLLECTIONS.notifications), where("user_id", "==", userId)),
+  );
   return snap.docs
     .map(mapNotification)
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
@@ -1440,7 +1469,10 @@ export interface DocumentFilters {
 export async function listDocuments(
   filters: DocumentFilters = {},
 ): Promise<ProjectDocument[]> {
-  const snap = await getDocs(collection(getDb(), COLLECTIONS.documents));
+  const userId = requireUid();
+  const snap = await getDocs(
+    query(collection(getDb(), COLLECTIONS.documents), where("uploaded_by", "==", userId)),
+  );
   let docs = snap.docs
     .map(mapDocument)
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
@@ -1622,9 +1654,11 @@ export interface NewActionLinkInput {
 export async function createActionLink(
   input: NewActionLinkInput,
 ): Promise<ContractorActionLink> {
+  const userId = requireUid();
   const token = generateActionToken();
   const ref = doc(getDb(), COLLECTIONS.contractorActionLinks, token);
   await setDoc(ref, {
+    created_by: userId,
     token,
     action_type: input.action_type,
     related_entity_type:
@@ -1665,8 +1699,9 @@ export interface ActionLinkFilters {
 export async function listActionLinks(
   filters: ActionLinkFilters = {},
 ): Promise<ContractorActionLink[]> {
+  const userId = requireUid();
   const snap = await getDocs(
-    collection(getDb(), COLLECTIONS.contractorActionLinks),
+    query(collection(getDb(), COLLECTIONS.contractorActionLinks), where("created_by", "==", userId)),
   );
   let links = snap.docs.map((d) => mapActionLink(d as Snap));
   if (filters.projectId)
