@@ -13,7 +13,7 @@ import type {
 } from "./database.types";
 
 /**
- * Shared constants for TradeFlow.
+ * Shared constants for PhaseBinder.
  * Keeping these in one place makes the app easy to reason about and avoids
  * "magic strings" scattered through the codebase.
  */
@@ -55,6 +55,7 @@ export const TRADE_PHASE_STATUSES: TradePhaseStatus[] = [
   "Needs Inspection",
   "Approved",
   "Blocked",
+  "Completed",
 ];
 
 /**
@@ -71,11 +72,12 @@ export const STATUS_STYLES: Record<TradePhaseStatus, string> = {
   "Needs Inspection": "bg-orange-100 text-orange-800",
   Approved: "bg-green-100 text-green-800",
   Blocked: "bg-red-100 text-red-800",
+  Completed: "bg-slate-200 text-slate-700",
 };
 
 /** Statuses considered "active" (work that is not yet approved). */
 export const ACTIVE_STATUSES: TradePhaseStatus[] = TRADE_PHASE_STATUSES.filter(
-  (s) => s !== "Approved",
+  (s) => s !== "Approved" && s !== "Completed",
 );
 
 /** Example trade names, used as quick-pick suggestions in the UI. */

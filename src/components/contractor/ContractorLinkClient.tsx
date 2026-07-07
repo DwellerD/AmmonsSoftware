@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { FirebaseError } from "firebase/app";
 import { ScheduleConfirmationAction } from "@/components/contractor/ScheduleConfirmationAction";
 // FUTURE FEATURE:
 // The contractor Punch Item Update flow is disabled for the current MVP (no
@@ -22,12 +23,21 @@ import type {
   TradePhaseWithRelations,
 } from "@/lib/database.types";
 
-type LinkError = ActionLinkInvalidReason | "config" | "unavailable" | "load";
+type LinkError =
+  | ActionLinkInvalidReason
+  | "config"
+  | "auth"
+  | "unavailable"
+  | "load";
 
 const ERROR_COPY: Record<LinkError, { title: string; body: string }> = {
   config: {
     title: "Not available",
     body: "This site isn't fully configured yet. Please contact the project team.",
+  },
+  auth: {
+    title: "Authentication unavailable",
+    body: "This link can't be opened right now because contractor sign-in is not enabled. Ask the project team to enable Firebase Anonymous Auth and add this domain to Authorized domains.",
   },
   missing: {
     title: "Link not found",
@@ -123,8 +133,18 @@ export function ContractorLinkClient({ token }: { token: string }) {
           // deferred to a later contractor-portal version.
           setError("unavailable");
         }
-      } catch {
-        if (active) setError("load");
+      } catch (err) {
+        if (!active) return;
+        if (
+          err instanceof FirebaseError &&
+          (err.code === "auth/operation-not-allowed" ||
+            err.code === "auth/admin-restricted-operation" ||
+            err.code === "auth/unauthorized-domain")
+        ) {
+          setError("auth");
+        } else {
+          setError("load");
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -138,10 +158,10 @@ export function ContractorLinkClient({ token }: { token: string }) {
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-10">
       <div className="mb-6 text-center">
-        <span className="text-lg font-semibold text-brand-700">TradeFlow</span>
+        <span className="text-lg font-semibold text-brand-700">PhaseBinder</span>
       </div>
 
-      <div className="rounded-2xl border border-ink-100 bg-white p-6 shadow-sm">
+      <div className="rounded-2xl border border-ink-100 bg-surface p-6 shadow-sm">
         {loading ? (
           <div className="flex flex-col items-center gap-3 py-6">
             <Spinner />
@@ -165,7 +185,7 @@ export function ContractorLinkClient({ token }: { token: string }) {
       </div>
 
       <p className="mt-6 text-center text-xs text-ink-400">
-        Sent by your project team via TradeFlow.
+        Sent by your project team via PhaseBinder.
       </p>
     </main>
   );

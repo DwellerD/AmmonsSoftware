@@ -82,7 +82,9 @@ export default function DashboardPage() {
     };
 
     return {
-      active: phases.filter((p) => p.status !== "Approved").length,
+      active: phases.filter(
+        (p) => p.status !== "Approved" && p.status !== "Completed",
+      ).length,
       today: phases.filter(isScheduledToday).length,
       blocked: phases.filter((p) => p.status === "Blocked").length,
       inspection: phases.filter((p) => p.status === "Needs Inspection").length,
@@ -199,6 +201,7 @@ export default function DashboardPage() {
               emptyText="No delayed materials."
               items={sprint2.delayedMaterials.map((m) => ({
                 key: m.id,
+                href: `/material-orders?status=Delayed&materialId=${m.id}`,
                 primary: m.name,
                 secondary: m.expected_arrival_date
                   ? `Expected ${formatDate(m.expected_arrival_date)}`

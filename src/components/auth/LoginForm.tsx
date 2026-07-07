@@ -133,7 +133,7 @@ export function LoginForm() {
       </Button>
 
       <p className="text-center text-sm text-ink-500">
-        {mode === "signin" ? "New to TradeFlow?" : "Already have an account?"}{" "}
+        {mode === "signin" ? "New to PhaseBinder?" : "Already have an account?"}{" "}
         <button
           type="button"
           className="font-medium text-brand-600 hover:text-brand-700"

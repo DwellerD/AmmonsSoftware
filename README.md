@@ -1,9 +1,11 @@
-# TradeFlow
+# PhaseBinder
 
 > Mobile-first construction workflow app for general contractors and site
 > supervisors.
 
-TradeFlow helps a GC manage **trade readiness, material tracking, contractor
+Production domain: <https://phasebinder.com>
+
+PhaseBinder helps a GC manage **trade readiness, material tracking, contractor
 scheduling, completion proof, inspection approvals, punch lists, a document
 vault, lightweight contractor action links, and daily project visibility** —
 all from their phone or desktop.
@@ -20,7 +22,7 @@ foundations.
 On a busy job site, a general contractor juggles dozens of trades across
 multiple buildings. Knowing _what is ready, what is blocked, who is scheduled,
 and what needs inspection_ usually lives in texts, spreadsheets, and the GC's
-head. TradeFlow turns that into a single, structured, auditable system so the
+head. PhaseBinder turns that into a single, structured, auditable system so the
 GC can start each day with a clear overview and keep every piece of work moving.
 
 ## Tech stack
@@ -37,7 +39,7 @@ GC can start each day with a clear overview and keep every piece of work moving.
 ```
 src/
   app/
-    page.tsx                 Public landing page ("TradeFlow is running")
+    page.tsx                 Public landing page ("PhaseBinder is running")
     login/                   Login / sign-up screen
     link/[token]/            Public contractor action link (no login required)
     (app)/                   Authenticated area (shares nav + auth guard)
@@ -98,6 +100,7 @@ npm install
    **Email/Password** sign-in provider. Also enable the **Anonymous** provider —
    the schedule-confirmation action link signs visitors in anonymously so their
    reads/writes satisfy the `signedIn()` Firestore rules without a full account.
+  Add `phasebinder.com` to **Authentication → Settings → Authorized domains**.
 3. **Build → Firestore Database → Create database** (start in production mode;
    the rules in this repo lock it down to signed-in users).
 4. **Build → Storage → Get started** to provision the default Cloud Storage
@@ -138,9 +141,11 @@ these keys. `.env.local` is git-ignored.
 npm run dev
 ```
 
-Open <http://localhost:3000>. You should see the **"TradeFlow is running"**
+Open <http://localhost:3000>. You should see the **"PhaseBinder is running"**
 landing page. Click **Sign in**, create an account, and you'll land on the
 dashboard.
+
+For production, the app is intended to be served at <https://phasebinder.com>.
 
 ### 5. Deploy Firestore and Storage security rules
 

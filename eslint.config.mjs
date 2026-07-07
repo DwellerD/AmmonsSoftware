@@ -12,6 +12,15 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Playwright end-to-end tests use their own toolchain and conventions
+    // (e.g. the `use` fixture callback, which the React Hooks rules misread).
+    // They are linted/typechecked by Playwright's own runner instead.
+    "tests/e2e/**",
+    "playwright.config.ts",
+    // Generated Playwright artifacts (HTML report, traces, results).
+    "playwright-report/**",
+    "test-results/**",
+    "blob-report/**",
   ]),
   {
     rules: {

@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// Firebase Storage security rules for TradeFlow.
+// Firebase Storage security rules for PhaseBinder.
 //
 // MVP policy: any signed-in user can read and write project files. This keeps
 // the contractor completion-photo upload flow simple while still requiring

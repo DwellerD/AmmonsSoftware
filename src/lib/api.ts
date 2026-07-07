@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -57,9 +58,10 @@ import type {
   TradePhaseStatus,
   TradePhaseWithRelations,
 } from "@/lib/database.types";
+import { todayIso } from "@/lib/format";
 
 /**
- * Client-side data access layer for TradeFlow, backed by Cloud Firestore.
+ * Client-side data access layer for PhaseBinder, backed by Cloud Firestore.
  *
  * Every screen talks to Firestore through these helper functions instead of
  * writing queries inline. Firestore is a NoSQL document store with no joins,
@@ -202,6 +204,8 @@ function mapPhase(s: Snap): TradePhase {
     scheduled_end_date: d.scheduled_end_date ?? null,
     schedule_confirmation_status: d.schedule_confirmation_status ?? null,
     schedule_confirmation_note: d.schedule_confirmation_note ?? null,
+    original_scheduled_end_date: d.original_scheduled_end_date ?? null,
+    schedule_extension_note: d.schedule_extension_note ?? null,
     created_by: d.created_by ?? null,
     created_at: toIso(d.created_at),
     updated_at: toIso(d.updated_at),
@@ -291,6 +295,15 @@ export interface NewContractorInput {
   notes?: string;
 }
 
+export interface UpdateContractorInput {
+  company_name: string;
+  contact_name?: string;
+  phone?: string;
+  email?: string;
+  trade_specialty?: string;
+  notes?: string;
+}
+
 export async function createContractor(
   input: NewContractorInput,
 ): Promise<Contractor> {
@@ -313,6 +326,29 @@ export async function createContractor(
     description: `Contractor "${contractor.company_name}" was added`,
   });
   return contractor;
+}
+
+/** Updates editable contractor details in place. */
+export async function updateContractor(
+  id: string,
+  input: UpdateContractorInput,
+): Promise<Contractor> {
+  const ref = doc(getDb(), COLLECTIONS.contractors, id);
+  await updateDoc(ref, {
+    company_name: input.company_name,
+    contact_name: input.contact_name || null,
+    phone: input.phone || null,
+    email: input.email || null,
+    trade_specialty: input.trade_specialty || null,
+    notes: input.notes || null,
+    updated_at: serverTimestamp(),
+  });
+  return mapContractor((await getDoc(ref)) as Snap);
+}
+
+/** Deletes a contractor record. */
+export async function deleteContractor(id: string): Promise<void> {
+  await deleteDoc(doc(getDb(), COLLECTIONS.contractors, id));
 }
 
 // ---------------------------------------------------------------------------
@@ -356,6 +392,13 @@ export interface NewTradeInput {
   default_contractor_id?: string;
 }
 
+export interface UpdateTradeInput {
+  project_id: string;
+  name: string;
+  description?: string;
+  default_contractor_id?: string;
+}
+
 export async function createTrade(input: NewTradeInput): Promise<Trade> {
   const ref = await addDoc(collection(getDb(), COLLECTIONS.trades), {
     project_id: input.project_id,
@@ -375,6 +418,27 @@ export async function createTrade(input: NewTradeInput): Promise<Trade> {
     description: `Trade "${trade.name}" was created`,
   });
   return trade;
+}
+
+/** Updates editable trade fields in place. */
+export async function updateTrade(
+  id: string,
+  input: UpdateTradeInput,
+): Promise<Trade> {
+  const ref = doc(getDb(), COLLECTIONS.trades, id);
+  await updateDoc(ref, {
+    project_id: input.project_id,
+    name: input.name,
+    description: input.description || null,
+    default_contractor_id: input.default_contractor_id || null,
+    updated_at: serverTimestamp(),
+  });
+  return mapTrade((await getDoc(ref)) as Snap);
+}
+
+/** Deletes a trade record. */
+export async function deleteTrade(id: string): Promise<void> {
+  await deleteDoc(doc(getDb(), COLLECTIONS.trades, id));
 }
 
 // ---------------------------------------------------------------------------
@@ -409,6 +473,53 @@ function attachRelations(
   };
 }
 
+const AUTO_NEEDS_INSPECTION_FROM: ReadonlyArray<TradePhaseStatus> = [
+  "Scheduled",
+  "In Progress",
+  "Submitted Complete",
+];
+
+function shouldAutoMoveToNeedsInspection(
+  phase: TradePhase,
+  today: string,
+): boolean {
+  return Boolean(
+    phase.scheduled_end_date &&
+      phase.scheduled_end_date <= today &&
+      AUTO_NEEDS_INSPECTION_FROM.includes(phase.status),
+  );
+}
+
+async function applyAutomaticNeedsInspection(
+  phase: TradePhase,
+  today: string,
+): Promise<TradePhase> {
+  if (!shouldAutoMoveToNeedsInspection(phase, today)) return phase;
+
+  try {
+    const ref = doc(getDb(), COLLECTIONS.tradePhases, phase.id);
+    await updateDoc(ref, {
+      status: "Needs Inspection" as TradePhaseStatus,
+      updated_at: serverTimestamp(),
+    });
+    await logActivity({
+      action_type: "trade_phase_status_updated",
+      entity_type: "trade_phase",
+      entity_id: phase.id,
+      project_id: phase.project_id,
+      description: `"${phase.title}" status auto-changed to Needs Inspection on scheduled end`,
+    });
+    return {
+      ...phase,
+      status: "Needs Inspection",
+      updated_at: new Date().toISOString(),
+    };
+  } catch (err) {
+    console.warn("Failed to auto-transition phase status:", err);
+    return phase;
+  }
+}
+
 export async function listTradePhases(
   filters: PhaseFilters = {},
 ): Promise<TradePhaseWithRelations[]> {
@@ -434,8 +545,13 @@ export async function listTradePhases(
   );
   const projects = new Map(projectSnap.docs.map((s) => [s.id, mapProject(s)]));
 
-  let phases = phaseSnap.docs.map((s) =>
-    attachRelations(mapPhase(s), trades, contractors, projects),
+  const today = todayIso();
+  const normalizedPhases = await Promise.all(
+    phaseSnap.docs.map((s) => applyAutomaticNeedsInspection(mapPhase(s), today)),
+  );
+
+  let phases = normalizedPhases.map((phase) =>
+    attachRelations(phase, trades, contractors, projects),
   );
 
   // Apply filters in memory (keeps us free of composite indexes).
@@ -455,7 +571,7 @@ export async function getTradePhase(
   const db = getDb();
   const snap = await getDoc(doc(db, COLLECTIONS.tradePhases, id));
   if (!snap.exists()) return null;
-  const phase = mapPhase(snap as Snap);
+  const phase = await applyAutomaticNeedsInspection(mapPhase(snap as Snap), todayIso());
 
   // Fetch only the related docs this phase references.
   const [tradeDoc, contractorDoc, projectDoc] = await Promise.all([
@@ -506,6 +622,8 @@ export async function createTradePhase(
     status: input.status,
     scheduled_start_date: input.scheduled_start_date || null,
     scheduled_end_date: input.scheduled_end_date || null,
+    original_scheduled_end_date: null,
+    schedule_extension_note: null,
     created_by: uid(),
     created_at: serverTimestamp(),
     updated_at: serverTimestamp(),
@@ -534,6 +652,39 @@ export async function updateTradePhaseStatus(
     entity_id: phase.id,
     project_id: phase.project_id,
     description: `"${phase.title}" status changed to ${status}`,
+  });
+  return phase;
+}
+
+/**
+ * Extends a phase's scheduled end date while preserving the original baseline
+ * date for auditability in the overview panel.
+ */
+export async function extendTradePhaseEndDate(
+  id: string,
+  nextEndDate: string,
+  note?: string,
+): Promise<TradePhase> {
+  const ref = doc(getDb(), COLLECTIONS.tradePhases, id);
+  const beforeSnap = await getDoc(ref);
+  if (!beforeSnap.exists()) {
+    throw new Error("Trade phase not found.");
+  }
+  const before = mapPhase(beforeSnap as Snap);
+  await updateDoc(ref, {
+    original_scheduled_end_date:
+      before.original_scheduled_end_date ?? before.scheduled_end_date ?? null,
+    scheduled_end_date: nextEndDate,
+    schedule_extension_note: note?.trim() ? note.trim() : null,
+    updated_at: serverTimestamp(),
+  });
+  const phase = mapPhase((await getDoc(ref)) as Snap);
+  await logActivity({
+    action_type: "trade_phase_status_updated",
+    entity_type: "trade_phase",
+    entity_id: phase.id,
+    project_id: phase.project_id,
+    description: `"${phase.title}" end date extended to ${nextEndDate}`,
   });
   return phase;
 }
@@ -567,6 +718,8 @@ function mapMaterialOrder(s: Snap): MaterialOrder {
     id: s.id,
     name: d.name,
     supplier: d.supplier ?? null,
+    tracking_number: d.tracking_number ?? null,
+    cost: typeof d.cost === "number" ? d.cost : null,
     expected_arrival_date: d.expected_arrival_date ?? null,
     actual_arrival_date: d.actual_arrival_date ?? null,
     status: d.status as MaterialOrderStatus,
@@ -691,6 +844,19 @@ export interface NewMaterialOrderInput {
   trade_id?: string;
   name: string;
   supplier?: string;
+  tracking_number?: string;
+  cost?: number;
+  status: MaterialOrderStatus;
+  expected_arrival_date?: string;
+  actual_arrival_date?: string;
+  notes?: string;
+}
+
+export interface UpdateMaterialOrderInput {
+  name: string;
+  supplier?: string;
+  tracking_number?: string;
+  cost?: number;
   status: MaterialOrderStatus;
   expected_arrival_date?: string;
   actual_arrival_date?: string;
@@ -703,6 +869,8 @@ export async function createMaterialOrder(
   const ref = await addDoc(collection(getDb(), COLLECTIONS.materialOrders), {
     name: input.name,
     supplier: input.supplier || null,
+    tracking_number: input.tracking_number || null,
+    cost: typeof input.cost === "number" ? input.cost : null,
     expected_arrival_date: input.expected_arrival_date || null,
     actual_arrival_date: input.actual_arrival_date || null,
     status: input.status,
@@ -723,6 +891,59 @@ export async function createMaterialOrder(
     description: `Material order "${order.name}" added`,
   });
   return order;
+}
+
+/** Loads one material order by id, or null if it doesn't exist. */
+export async function getMaterialOrder(
+  id: string,
+): Promise<MaterialOrder | null> {
+  const ref = doc(getDb(), COLLECTIONS.materialOrders, id);
+  const snap = await getDoc(ref);
+  return snap.exists() ? mapMaterialOrder(snap as Snap) : null;
+}
+
+/** Updates editable material order details in place. */
+export async function updateMaterialOrder(
+  id: string,
+  input: UpdateMaterialOrderInput,
+): Promise<MaterialOrder> {
+  const ref = doc(getDb(), COLLECTIONS.materialOrders, id);
+  const before = await getMaterialOrder(id);
+  await updateDoc(ref, {
+    name: input.name,
+    supplier: input.supplier || null,
+    tracking_number: input.tracking_number || null,
+    cost: typeof input.cost === "number" ? input.cost : null,
+    status: input.status,
+    expected_arrival_date: input.expected_arrival_date || null,
+    actual_arrival_date: input.actual_arrival_date || null,
+    notes: input.notes || null,
+    updated_at: serverTimestamp(),
+  });
+  const order = mapMaterialOrder((await getDoc(ref)) as Snap);
+  if (before?.status !== input.status) {
+    await logActivity({
+      action_type: "material_order_status_updated",
+      entity_type: "material_order",
+      entity_id: order.id,
+      project_id: order.project_id,
+      description: `Material order "${order.name}" marked ${input.status}`,
+    });
+  }
+  if (before?.status !== "Delayed" && input.status === "Delayed") {
+    await createNotification({
+      notification_type: "material_delayed",
+      related_entity_type: "material_order",
+      related_entity_id: order.id,
+      message: `Material order "${order.name}" is delayed.`,
+    });
+  }
+  return order;
+}
+
+/** Deletes a material order record. */
+export async function deleteMaterialOrder(id: string): Promise<void> {
+  await deleteDoc(doc(getDb(), COLLECTIONS.materialOrders, id));
 }
 
 export async function updateMaterialOrderStatus(
@@ -1044,6 +1265,35 @@ export async function updatePunchItemStatus(
     });
   }
   return item;
+}
+
+export interface UpdatePunchItemInput {
+  title: string;
+  description?: string;
+  assigned_contractor_id?: string;
+  due_date?: string;
+  priority: PunchPriority;
+  status: PunchItemStatus;
+}
+
+/** Updates editable punch-item details from GC screens. */
+export async function updatePunchItem(
+  id: string,
+  input: UpdatePunchItemInput,
+): Promise<PunchItem> {
+  const ref = doc(getDb(), COLLECTIONS.punchItems, id);
+  const resolving = input.status === "Resolved" || input.status === "Closed";
+  await updateDoc(ref, {
+    title: input.title,
+    description: input.description || null,
+    assigned_contractor_id: input.assigned_contractor_id || null,
+    due_date: input.due_date || null,
+    priority: input.priority,
+    status: input.status,
+    resolved_at: resolving ? serverTimestamp() : null,
+    updated_at: serverTimestamp(),
+  });
+  return mapPunchItem((await getDoc(ref)) as Snap);
 }
 
 /** Loads a single punch item by id, or null if it doesn't exist. */

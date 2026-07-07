@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Field";
@@ -56,6 +57,8 @@ export function MaterialsSection({
 
   const [name, setName] = useState("");
   const [supplier, setSupplier] = useState("");
+  const [trackingNumber, setTrackingNumber] = useState("");
+  const [cost, setCost] = useState("");
   const [status, setStatus] = useState<MaterialOrderStatus>("Needed");
   const [expected, setExpected] = useState("");
   const [saving, setSaving] = useState(false);
@@ -97,12 +100,16 @@ export function MaterialsSection({
         trade_id: tradeId,
         name: name.trim(),
         supplier: supplier.trim() || undefined,
+        tracking_number: trackingNumber.trim() || undefined,
+        cost: cost.trim() ? Number(cost) : undefined,
         status,
         expected_arrival_date: expected || undefined,
       });
       setItems((prev) => [...prev, created]);
       setName("");
       setSupplier("");
+      setTrackingNumber("");
+      setCost("");
       setStatus("Needed");
       setExpected("");
     } catch (err) {
@@ -134,7 +141,8 @@ export function MaterialsSection({
   const canBlock =
     readiness === "delayed" &&
     phaseStatus !== "Blocked" &&
-    phaseStatus !== "Approved";
+    phaseStatus !== "Approved" &&
+    phaseStatus !== "Completed";
   const canReady =
     readiness === "received" &&
     (phaseStatus === "Not Ready" ||
@@ -217,9 +225,12 @@ export function MaterialsSection({
             {items.map((m) => (
               <li key={m.id} className="flex flex-wrap items-center gap-2 py-2">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-ink-800">
+                  <Link
+                    href={`/material-orders?materialId=${m.id}`}
+                    className="truncate text-sm font-medium text-ink-800 hover:underline"
+                  >
                     {m.name}
-                  </p>
+                  </Link>
                   <p className="text-xs text-ink-500">
                     {m.supplier ? `${m.supplier} · ` : ""}
                     {m.actual_arrival_date
@@ -227,6 +238,10 @@ export function MaterialsSection({
                       : m.expected_arrival_date
                         ? `expected ${formatDate(m.expected_arrival_date)}`
                         : "no ETA"}
+                    {m.tracking_number ? ` · tracking ${m.tracking_number}` : ""}
+                    {typeof m.cost === "number"
+                      ? ` · $${m.cost.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                      : ""}
                   </p>
                 </div>
                 <Select
@@ -270,6 +285,27 @@ export function MaterialsSection({
                 id="material-supplier"
                 value={supplier}
                 onChange={(e) => setSupplier(e.target.value)}
+                placeholder="Optional"
+              />
+            </Field>
+            <Field label="Tracking number" htmlFor="material-tracking">
+              <Input
+                id="material-tracking"
+                className="max-w-xs"
+                value={trackingNumber}
+                onChange={(e) => setTrackingNumber(e.target.value)}
+                placeholder="Optional"
+              />
+            </Field>
+            <Field label="Cost ($)" htmlFor="material-cost">
+              <Input
+                id="material-cost"
+                type="number"
+                min="0"
+                step="0.01"
+                className="max-w-xs"
+                value={cost}
+                onChange={(e) => setCost(e.target.value)}
                 placeholder="Optional"
               />
             </Field>

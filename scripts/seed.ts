@@ -1,5 +1,5 @@
 /**
- * TradeFlow development seed script.
+ * PhaseBinder development seed script.
  * -----------------------------------------------------------------------------
  * Populates Cloud Firestore with a realistic sample project so the dashboard
  * and trade-phase screens look alive during development.
@@ -121,7 +121,7 @@ async function main() {
     location: "123 Maple St, Springfield",
     start_date: dateOffset(-30),
     estimated_end_date: dateOffset(120),
-    notes: "40-unit apartment build used as TradeFlow demo data.",
+    notes: "40-unit apartment build used as PhaseBinder demo data.",
     created_by: null,
     created_at: now(),
     updated_at: now(),

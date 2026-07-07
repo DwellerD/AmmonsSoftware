@@ -48,6 +48,8 @@ export function MaterialOrderForm() {
   const [tradePhaseId, setTradePhaseId] = useState(initialPhaseId);
   const [name, setName] = useState("");
   const [supplier, setSupplier] = useState("");
+  const [trackingNumber, setTrackingNumber] = useState("");
+  const [cost, setCost] = useState("");
   const [expected, setExpected] = useState("");
   const [status, setStatus] = useState<MaterialOrderStatus>("Needed");
   const [notes, setNotes] = useState("");
@@ -94,6 +96,8 @@ export function MaterialOrderForm() {
   function resetForm() {
     setName("");
     setSupplier("");
+    setTrackingNumber("");
+    setCost("");
     setExpected("");
     setStatus("Needed");
     setNotes("");
@@ -114,6 +118,8 @@ export function MaterialOrderForm() {
         trade_phase_id: tradePhaseId || undefined,
         name: name.trim(),
         supplier: supplier.trim() || undefined,
+        tracking_number: trackingNumber.trim() || undefined,
+        cost: cost.trim() ? Number(cost) : undefined,
         expected_arrival_date: expected || undefined,
         status,
         notes: notes.trim() || undefined,
@@ -203,6 +209,27 @@ export function MaterialOrderForm() {
                 id="supplier"
                 value={supplier}
                 onChange={(e) => setSupplier(e.target.value)}
+                placeholder="Optional"
+              />
+            </Field>
+            <Field label="Tracking number" htmlFor="tracking-number">
+              <Input
+                id="tracking-number"
+                className="max-w-xs"
+                value={trackingNumber}
+                onChange={(e) => setTrackingNumber(e.target.value)}
+                placeholder="Optional"
+              />
+            </Field>
+            <Field label="Cost ($)" htmlFor="cost">
+              <Input
+                id="cost"
+                type="number"
+                min="0"
+                step="0.01"
+                className="max-w-xs"
+                value={cost}
+                onChange={(e) => setCost(e.target.value)}
                 placeholder="Optional"
               />
             </Field>

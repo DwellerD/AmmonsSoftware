@@ -7,13 +7,17 @@ import { PageContainer, PageHeader } from "@/components/ui/PageContainer";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Badge";
-import { Field, Select } from "@/components/ui/Field";
+import { Field, Input, Select, Textarea } from "@/components/ui/Field";
 import {
   EmptyState,
   ErrorAlert,
   LoadingState,
 } from "@/components/ui/States";
-import { getTradePhase, updateTradePhaseStatus } from "@/lib/api";
+import {
+  extendTradePhaseEndDate,
+  getTradePhase,
+  updateTradePhaseStatus,
+} from "@/lib/api";
 import { TRADE_PHASE_STATUSES } from "@/lib/constants";
 import { formatDate } from "@/lib/format";
 import { MaterialsSection } from "@/components/phase/MaterialsSection";
@@ -21,6 +25,7 @@ import { CompletionSection } from "@/components/phase/CompletionSection";
 import { PunchItemsSection } from "@/components/phase/PunchItemsSection";
 import { PhaseDocumentsSection } from "@/components/phase/PhaseDocumentsSection";
 import { ScheduleConfirmationManager } from "@/components/phase/ScheduleConfirmationManager";
+import { useAuth } from "@/components/providers/AuthProvider";
 import type {
   TradePhaseStatus,
   TradePhaseWithRelations,
@@ -34,6 +39,7 @@ import type {
  * GC inspection/approval, and the punch list.
  */
 export default function TradePhaseDetailPage() {
+  const { canManage } = useAuth();
   const params = useParams<{ id: string }>();
   const phaseId = params.id;
 
@@ -46,6 +52,13 @@ export default function TradePhaseDetailPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+
+  // Schedule extension state
+  const [showExtensionForm, setShowExtensionForm] = useState(false);
+  const [extensionEndDate, setExtensionEndDate] = useState("");
+  const [extensionNote, setExtensionNote] = useState("");
+  const [extending, setExtending] = useState(false);
+  const [extensionError, setExtensionError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -179,12 +192,115 @@ export default function TradePhaseDetailPage() {
                 label="Scheduled end"
                 value={formatDate(phase.scheduled_end_date)}
               />
+              {phase.original_scheduled_end_date && (
+                <DetailRow
+                  label="Original end"
+                  value={formatDate(phase.original_scheduled_end_date)}
+                />
+              )}
+              {phase.original_scheduled_end_date && phase.scheduled_end_date && (
+                <DetailRow
+                  label="Extension"
+                  value={`${daysBetween(
+                    phase.original_scheduled_end_date,
+                    phase.scheduled_end_date,
+                  )} day(s)`}
+                />
+              )}
+              {phase.schedule_extension_note && (
+                <div className="pt-2">
+                  <p className="text-ink-500">Extension note</p>
+                  <p className="mt-1 whitespace-pre-wrap text-ink-800">
+                    {phase.schedule_extension_note}
+                  </p>
+                </div>
+              )}
               {phase.description && (
                 <div className="pt-2">
                   <p className="text-ink-500">Description</p>
                   <p className="mt-1 whitespace-pre-wrap text-ink-800">
                     {phase.description}
                   </p>
+                </div>
+              )}
+
+              {canManage && (
+                <div className="border-t border-ink-100 pt-3">
+                  {!showExtensionForm ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setExtensionEndDate(phase.scheduled_end_date ?? "");
+                        setExtensionNote(phase.schedule_extension_note ?? "");
+                        setExtensionError(null);
+                        setShowExtensionForm(true);
+                      }}
+                    >
+                      Extension
+                    </Button>
+                  ) : (
+                    <form
+                      className="space-y-3"
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        if (!extensionEndDate) {
+                          setExtensionError("Select the new scheduled end date.");
+                          return;
+                        }
+                        setExtending(true);
+                        setExtensionError(null);
+                        try {
+                          const updated = await extendTradePhaseEndDate(
+                            phase.id,
+                            extensionEndDate,
+                            extensionNote,
+                          );
+                          setPhase({ ...phase, ...updated });
+                          setShowExtensionForm(false);
+                        } catch (err) {
+                          setExtensionError(
+                            err instanceof Error
+                              ? err.message
+                              : "Failed to update scheduled end date.",
+                          );
+                        } finally {
+                          setExtending(false);
+                        }
+                      }}
+                    >
+                      {extensionError && <ErrorAlert message={extensionError} />}
+                      <Field label="New scheduled end" htmlFor="extension-end" required>
+                        <Input
+                          id="extension-end"
+                          type="date"
+                          value={extensionEndDate}
+                          onChange={(e) => setExtensionEndDate(e.target.value)}
+                        />
+                      </Field>
+                      <Field label="Extension note" htmlFor="extension-note">
+                        <Textarea
+                          id="extension-note"
+                          value={extensionNote}
+                          onChange={(e) => setExtensionNote(e.target.value)}
+                          placeholder="Why the schedule changed (optional)."
+                        />
+                      </Field>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="submit" size="sm" loading={extending}>
+                          Save extension
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setShowExtensionForm(false)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </form>
+                  )}
                 </div>
               )}
             </CardBody>
@@ -273,6 +389,13 @@ export default function TradePhaseDetailPage() {
       </div>
     </PageContainer>
   );
+}
+
+function daysBetween(fromIso: string, toIso: string): number {
+  const from = new Date(fromIso);
+  const to = new Date(toIso);
+  const ms = to.getTime() - from.getTime();
+  return Math.round(ms / 86_400_000);
 }
 
 function DetailRow({

@@ -32,8 +32,15 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
-# ...but DO commit the example so others know which variables are required.
+# ...but DO commit the examples so others know which variables are required.
 !.env.local.example
+!tests/e2e/.env.example
+
+# Playwright e2e artifacts
+/playwright-report
+/test-results
+/blob-report
+/playwright/.cache
 
 # Firebase service-account keys (NEVER commit these)
 *-firebase-adminsdk-*.json

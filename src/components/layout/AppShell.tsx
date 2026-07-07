@@ -53,6 +53,9 @@ const icons = {
   notifications: (
     <path d="M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2Zm6-6V11a6 6 0 0 0-4-5.65V5a2 2 0 1 0-4 0v.35A6 6 0 0 0 6 11v5l-2 2v1h16v-1l-2-2Z" />
   ),
+  settings: (
+    <path d="M19.14 12.94a7.48 7.48 0 0 0 .05-.94 7.48 7.48 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.14 7.14 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.8a.5.5 0 0 0-.49.42l-.36 2.54c-.58.22-1.12.53-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 8.48a.5.5 0 0 0 .12.64l2.03 1.58c-.03.31-.05.62-.05.94 0 .32.02.63.05.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.41 1.05.72 1.63.94l.36 2.54a.5.5 0 0 0 .49.42h3.8a.5.5 0 0 0 .49-.42l.36-2.54c.58-.22 1.13-.53 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z" />
+  ),
 };
 
 const NAV_ITEMS: NavItem[] = [
@@ -95,6 +98,11 @@ const NAV_ITEMS: NavItem[] = [
     label: "Contractors",
     href: "/contractors",
     icon: <Icon>{icons.contractors}</Icon>,
+  },
+  {
+    label: "Settings",
+    href: "/settings",
+    icon: <Icon>{icons.settings}</Icon>,
   },
   // FUTURE FEATURE:
   // The Notifications history screen is intentionally removed from the primary
@@ -162,10 +170,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">
       {/* Desktop sidebar */}
-      <aside className="hidden w-60 flex-shrink-0 border-r border-ink-200 bg-white lg:flex lg:flex-col">
+      <aside className="hidden w-60 flex-shrink-0 border-r border-ink-200 bg-surface lg:flex lg:flex-col">
         <div className="flex h-16 items-center border-b border-ink-100 px-5">
           <Link href="/dashboard" className="text-lg font-bold text-ink-900">
-            TradeFlow
+            PhaseBinder
           </Link>
         </div>
         <nav className="flex-1 space-y-1 p-3">{navLinks()}</nav>
@@ -179,9 +187,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Mobile top bar */}
-      <header className="flex h-14 items-center justify-between border-b border-ink-200 bg-white px-4 lg:hidden">
+      <header className="flex h-14 items-center justify-between border-b border-ink-200 bg-surface px-4 lg:hidden">
         <Link href="/dashboard" className="text-lg font-bold text-ink-900">
-          TradeFlow
+          PhaseBinder
         </Link>
         <button
           type="button"
@@ -203,7 +211,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Mobile dropdown menu */}
       {mobileOpen && (
-        <nav className="space-y-1 border-b border-ink-200 bg-white p-3 lg:hidden">
+        <nav className="space-y-1 border-b border-ink-200 bg-surface p-3 lg:hidden">
           {navLinks(() => setMobileOpen(false))}
           <div className="mt-2 flex items-center justify-between border-t border-ink-100 px-3 pt-3">
             <div>
@@ -218,7 +226,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Page content */}
-      <main className="flex-1 bg-ink-50">{children}</main>
+      <main className="flex-1 bg-canvas">{children}</main>
     </div>
   );
 }

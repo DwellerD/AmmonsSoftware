@@ -54,6 +54,7 @@ export default function TradePhasesPage() {
   const [projectId, setProjectId] = useState("");
   const [status, setStatus] = useState<"" | TradePhaseStatus>("");
   const [tradeId, setTradeId] = useState("");
+  const [showArchive, setShowArchive] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -106,23 +107,40 @@ export default function TradePhasesPage() {
   const visiblePhases = useMemo(
     () =>
       phases.filter((p) => {
+        const isArchived = p.status === "Completed";
+        if (showArchive ? !isArchived : isArchived) return false;
         if (projectId && p.project_id !== projectId) return false;
         if (status && p.status !== status) return false;
         if (tradeId && p.trade_id !== tradeId) return false;
         return true;
       }),
-    [phases, projectId, status, tradeId],
+    [phases, projectId, showArchive, status, tradeId],
   );
 
   return (
     <PageContainer>
       <PageHeader
         title="Trade Phases"
-        description="The core workflow items you track across every project."
+        description={
+          showArchive
+            ? "Archived phases marked Completed. Change a status to move it back to active."
+            : "The core workflow items you track across every project."
+        }
         action={
-          <Link href="/trade-phases/new">
-            <Button>New trade phase</Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowArchive((prev) => !prev);
+                setStatus("");
+              }}
+            >
+              {showArchive ? "Back to active" : "Archive"}
+            </Button>
+            <Link href="/trade-phases/new">
+              <Button>New trade phase</Button>
+            </Link>
+          </div>
         }
       />
 
@@ -180,12 +198,16 @@ export default function TradePhasesPage() {
           title={
             phases.length === 0
               ? "No trade phases yet"
-              : "No phases match these filters"
+              : showArchive
+                ? "No archived phases match these filters"
+                : "No phases match these filters"
           }
           description={
             phases.length === 0
               ? "Create your first trade phase to start tracking work."
-              : "Try clearing a filter to see more."
+              : showArchive
+                ? "Try clearing a filter or complete a phase to archive it."
+                : "Try clearing a filter to see more."
           }
           action={
             phases.length === 0 ? (

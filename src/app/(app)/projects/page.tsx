@@ -48,7 +48,7 @@ export default function ProjectsPage() {
     <PageContainer>
       <PageHeader
         title="Projects"
-        description="Every build you are tracking in TradeFlow."
+        description="Every build you are tracking in PhaseBinder."
         action={
           canManage && !showForm ? (
             <Button onClick={() => setShowForm(true)}>New project</Button>

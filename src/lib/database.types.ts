@@ -1,5 +1,5 @@
 /**
- * TradeFlow data model (TypeScript view of the Firestore collections).
+ * PhaseBinder data model (TypeScript view of the Firestore collections).
  *
  * These interfaces describe the shape of documents stored in Cloud Firestore.
  * They are intentionally hand-written and kept simple so a new developer can
@@ -19,7 +19,8 @@ export type TradePhaseStatus =
   | "Submitted Complete"
   | "Needs Inspection"
   | "Approved"
-  | "Blocked";
+  | "Blocked"
+  | "Completed";
 
 /** Kinds of actions we record in the activity log. */
 export type ActivityAction =
@@ -136,6 +137,10 @@ export interface TradePhase {
   schedule_confirmation_status: ScheduleConfirmationStatus | null;
   /** Optional reason the contractor gave when declining the schedule. */
   schedule_confirmation_note: string | null;
+  /** Snapshot of the original end date before any extension was applied. */
+  original_scheduled_end_date: string | null;
+  /** Optional note explaining why the schedule end was extended. */
+  schedule_extension_note: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -177,6 +182,10 @@ export interface MaterialOrder {
   id: string;
   name: string;
   supplier: string | null;
+  /** Optional shipment / courier tracking number for the order. */
+  tracking_number: string | null;
+  /** Optional planned/actual cost for this order in dollars. */
+  cost: number | null;
   expected_arrival_date: string | null;
   actual_arrival_date: string | null;
   status: MaterialOrderStatus;

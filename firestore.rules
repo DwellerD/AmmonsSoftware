@@ -1,99 +1,106 @@
 rules_version = '2';
 
-// Firestore security rules for TradeFlow.
+// Firestore security rules for PhaseBinder.
 //
-// This is an MVP ruleset: any signed-in user can read and write the shared
-// project data. Tighten these before a production launch (e.g. per-project
-// membership, role checks, field validation).
+// This ruleset keeps gc_site_super access fully intact while reducing broad
+// write permissions for non-manager roles.
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // True when the request is made by an authenticated user.
     function signedIn() {
       return request.auth != null;
     }
 
-    // User profile documents are keyed by the auth uid.
-    // Anyone signed in can read profiles (to show names/roles); a user may
-    // only create or modify their own profile document.
-    match /users/{userId} {
-      allow read: if signedIn();
-      allow write: if signedIn() && request.auth.uid == userId;
+    function currentUserDocPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
     }
 
-    // Core shared collections: readable and writable by any signed-in user.
+    function currentUserRole() {
+      return signedIn() && exists(currentUserDocPath())
+        ? get(currentUserDocPath()).data.role
+        : null;
+    }
+
+    function canManage() {
+      return signedIn() &&
+        currentUserRole() in ['admin', 'gc_site_super', 'internal_team'];
+    }
+
+    // User profile documents are keyed by auth uid.
+    // Managers can read all profiles; users can always read/update their own.
+    match /users/{userId} {
+      allow read: if canManage() || (signedIn() && request.auth.uid == userId);
+      allow create, update: if signedIn() && request.auth.uid == userId;
+      allow delete: if false;
+    }
+
+    // Core workflow data is manager-managed. This preserves full gc_site_super
+    // capabilities and limits mutation for non-manager roles.
     match /projects/{projectId} {
-      allow read, write: if signedIn();
+      allow read, write: if canManage();
     }
 
     match /contractors/{contractorId} {
-      allow read, write: if signedIn();
+      allow read, write: if canManage();
     }
 
     match /trades/{tradeId} {
-      allow read, write: if signedIn();
+      allow read, write: if canManage();
     }
 
     match /tradePhases/{phaseId} {
-      allow read, write: if signedIn();
+      allow read, write: if canManage();
     }
 
-    // Activity logs are an append-only audit trail: signed-in users can read
-    // and create entries, but not edit or delete existing ones.
+    // Append-only audit trail.
     match /activityLogs/{logId} {
-      allow read, create: if signedIn();
+      allow read, create: if canManage();
       allow update, delete: if false;
     }
 
-    // Sprint 2 collections. Material orders and punch items change over their
-    // lifecycle, so they allow full read/write. Completion proof and
-    // inspections are records of what happened, so they are read + create only
-    // (no edits or deletes).
     match /materialOrders/{orderId} {
-      allow read, write: if signedIn();
+      allow read, write: if canManage();
     }
 
     match /punchItems/{punchItemId} {
-      allow read, write: if signedIn();
+      allow read, write: if canManage();
     }
 
-    // Completion proof: signed-in users can read, create, and update (the GC
-    // updates the review status on approval/rejection). Deletes are blocked so
-    // the submission history stays intact.
     match /completionRecords/{recordId} {
-      allow read, create, update: if signedIn();
+      allow read, create, update: if canManage();
       allow delete: if false;
     }
 
     match /inspections/{inspectionId} {
-      allow read, create: if signedIn();
+      allow read, create: if canManage();
       allow update, delete: if false;
     }
 
-    // Notification records (in-app only for Sprint 2). Signed-in users can read
-    // and create them, and update to flip the read status. Deletes are blocked.
+    // Managers can send and update notifications. Recipients may read and mark
+    // their own records as read.
     match /notifications/{notificationId} {
-      allow read, create, update: if signedIn();
+      allow read: if canManage() ||
+        (signedIn() && resource.data.recipient_id == request.auth.uid);
+      allow create: if canManage();
+      allow update: if canManage() ||
+        (signedIn() &&
+          resource.data.recipient_id == request.auth.uid &&
+          request.resource.data.recipient_id == resource.data.recipient_id &&
+          request.resource.data.type == resource.data.type &&
+          request.resource.data.related_entity_type == resource.data.related_entity_type &&
+          request.resource.data.related_entity_id == resource.data.related_entity_id);
       allow delete: if false;
     }
 
-    // Project documents (Sprint 3 Document Vault). Signed-in users can read,
-    // create, update (rename, re-tag, pin/unpin), and delete their files.
     match /documents/{documentId} {
-      allow read, write: if signedIn();
+      allow read, write: if canManage();
     }
 
-    // Contractor action links (Sprint 3). A link's document id IS its
-    // unguessable token, so a single-document `get` only succeeds for someone
-    // who already has the token — this is how an unauthenticated contractor
-    // opens their link. Listing the whole collection (which would leak every
-    // token) is restricted to signed-in users. Contractors complete their
-    // action after a lightweight (anonymous) sign-in, so create/update require
-    // a signed-in request; deletes are blocked (links are revoked, not removed).
+    // Tokenized links: direct doc get stays public-by-token; management is
+    // manager-only.
     match /contractorActionLinks/{token} {
       allow get: if true;
-      allow list: if signedIn();
-      allow create, update: if signedIn();
+      allow list, create, update: if canManage();
       allow delete: if false;
     }
   }

@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
 import { AuthProvider } from "@/components/providers/AuthProvider";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
 
 // Root metadata shown in the browser tab and shared link previews.
 export const metadata: Metadata = {
-  title: "TradeFlow",
+  metadataBase: new URL("https://phasebinder.com"),
+  title: "PhaseBinder",
   description:
     "Mobile-first construction workflow app for trade readiness, material tracking, completion proof, and document control.",
 };
@@ -20,7 +23,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full antialiased">
+    <html lang="en" className="h-full antialiased" suppressHydrationWarning>
+      <head>
+        <Script id="theme-init" strategy="beforeInteractive">
+          {THEME_INIT_SCRIPT}
+        </Script>
+      </head>
       <body className="min-h-full flex flex-col">
         <AuthProvider>{children}</AuthProvider>
       </body>

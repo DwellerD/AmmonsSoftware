@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Field, Textarea } from "@/components/ui/Field";
 import { ErrorAlert, SuccessAlert } from "@/components/ui/States";
 import { markActionLinkUsed, setPhaseScheduleConfirmation } from "@/lib/api";
+import { ensureAnonymousSession } from "@/lib/firebase/client";
 import { formatDate } from "@/lib/format";
 import type {
   ContractorActionLink,
@@ -38,6 +39,7 @@ export function ScheduleConfirmationAction({
     setSaving(true);
     setError(null);
     try {
+      await ensureAnonymousSession();
       await setPhaseScheduleConfirmation(
         phase.id,
         decision,

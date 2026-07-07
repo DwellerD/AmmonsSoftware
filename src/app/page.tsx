@@ -2,7 +2,7 @@ import Link from "next/link";
 
 /**
  * Public landing page.
- * Its main job for Sprint 1 is to confirm that TradeFlow is running and to
+ * Its main job for Sprint 1 is to confirm that PhaseBinder is running and to
  * point the user toward the login screen. It does not require authentication.
  */
 export default function Home() {
@@ -12,11 +12,11 @@ export default function Home() {
         {/* Small status pill confirming the app is up */}
         <span className="inline-flex items-center gap-2 rounded-full bg-brand-50 px-3 py-1 text-sm font-medium text-brand-700">
           <span className="h-2 w-2 rounded-full bg-brand-600" />
-          TradeFlow is running
+          PhaseBinder is running
         </span>
 
         <h1 className="mt-6 text-4xl font-bold tracking-tight text-ink-900 sm:text-5xl">
-          TradeFlow
+          PhaseBinder
         </h1>
         <p className="mt-4 text-lg text-ink-600">
           A mobile-first construction workflow app for trade readiness, material
@@ -32,7 +32,7 @@ export default function Home() {
           </Link>
           <Link
             href="/dashboard"
-            className="inline-flex h-11 w-full items-center justify-center rounded-lg border border-ink-200 bg-white px-6 font-medium text-ink-700 transition-colors hover:bg-ink-50 sm:w-auto"
+            className="inline-flex h-11 w-full items-center justify-center rounded-lg border border-ink-200 bg-surface px-6 font-medium text-ink-700 transition-colors hover:bg-ink-50 sm:w-auto"
           >
             Go to dashboard
           </Link>
