@@ -970,7 +970,11 @@ export async function listTradePhases(
     loadDocsByVisibleProjects(COLLECTIONS.tradePhases, visibleProjectIds),
     loadDocsByVisibleProjects(COLLECTIONS.trades, visibleProjectIds),
     listContractors(),
-    loadDocsByVisibleProjects(COLLECTIONS.projects, visibleProjectIds),
+    Promise.all(
+      [...visibleProjectIds].map((projectId) =>
+        getDoc(doc(getDb(), COLLECTIONS.projects, projectId)),
+      ),
+    ),
   ]);
 
   const failures: string[] = [];
@@ -990,7 +994,11 @@ export async function listTradePhases(
 
   const trades = new Map(tradeSnap.map((s) => [s.id, mapTrade(s)]));
   const contractors = new Map(contractorSnap.map((contractor) => [contractor.id, contractor]));
-  const projects = new Map(projectSnap.map((s) => [s.id, mapProject(s)]));
+  const projects = new Map(
+    projectSnap
+      .filter((snap): snap is Snap => snap.exists())
+      .map((snap) => [snap.id, mapProject(snap)]),
+  );
 
   const today = todayIso();
   const normalizedPhases = await Promise.all(
