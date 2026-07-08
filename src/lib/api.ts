@@ -183,11 +183,8 @@ async function getCurrentUserProjectAccess(
   const userId = uid();
   if (!userId) return null;
 
-  const ref = doc(getDb(), COLLECTIONS.projectAccess, accessDocId(projectId, userId));
-  const snap = await getDoc(ref);
-  if (snap.exists()) return mapProjectAccess(snap as Snap);
-
-  if ((await getProjectOwnerId(projectId)) === userId) {
+  const ownerId = await getProjectOwnerId(projectId);
+  if (ownerId === userId) {
     return {
       id: accessDocId(projectId, userId),
       project_id: projectId,
@@ -200,6 +197,10 @@ async function getCurrentUserProjectAccess(
       updated_at: new Date().toISOString(),
     };
   }
+
+  const ref = doc(getDb(), COLLECTIONS.projectAccess, accessDocId(projectId, userId));
+  const snap = await getDoc(ref);
+  if (snap.exists()) return mapProjectAccess(snap as Snap);
 
   return null;
 }
@@ -224,6 +225,12 @@ async function requireProjectPermission(
 async function getCurrentUserProjectAccessMap(): Promise<Map<string, ProjectAccess>> {
   const userId = requireUid();
   const db = getDb();
+  const accessRes = await getDocs(
+    query(collection(db, COLLECTIONS.projectAccess), where("user_id", "==", userId)),
+  ).catch((err) => {
+    console.warn("Project access query failed; continuing without it.", err);
+    return null;
+  });
   const ownedRes = await getDocs(
     query(
       collection(db, COLLECTIONS.projects),
@@ -233,14 +240,13 @@ async function getCurrentUserProjectAccessMap(): Promise<Map<string, ProjectAcce
     console.warn("Owned projects query failed; continuing without it.", err);
     return null;
   });
-  const accessRes = await getDocs(
-    query(collection(db, COLLECTIONS.projectAccess), where("user_id", "==", userId)),
-  ).catch((err) => {
-    console.warn("Project access query failed; continuing without it.", err);
-    return null;
-  });
 
   const accessMap = new Map<string, ProjectAccess>();
+
+  accessRes?.docs.forEach((snap) => {
+    const access = mapProjectAccess(snap as Snap);
+    accessMap.set(access.project_id, access);
+  });
 
   ownedRes?.docs.forEach((snap) => {
     const projectId = snap.id;
@@ -255,11 +261,6 @@ async function getCurrentUserProjectAccessMap(): Promise<Map<string, ProjectAcce
       created_at: toIso(snap.data().created_at),
       updated_at: toIso(snap.data().updated_at),
     });
-  });
-
-  accessRes?.docs.forEach((snap) => {
-    const access = mapProjectAccess(snap as Snap);
-    accessMap.set(access.project_id, access);
   });
 
   return accessMap;
@@ -1036,13 +1037,22 @@ export async function getTradePhase(
   if (!access || !access.can_view_trade_phases) return null;
   const phase = await applyAutomaticNeedsInspection(basePhase, todayIso());
 
+  async function readRelatedDoc<T>(promise: Promise<T | null>): Promise<T | null> {
+    try {
+      return await promise;
+    } catch (err) {
+      if (String(err).includes("permission-denied")) return null;
+      throw err;
+    }
+  }
+
   // Fetch only the related docs this phase references.
   const [tradeDoc, contractorDoc, projectDoc] = await Promise.all([
-    getDoc(doc(db, COLLECTIONS.trades, phase.trade_id)),
+    readRelatedDoc(getDoc(doc(db, COLLECTIONS.trades, phase.trade_id))),
     phase.contractor_id
-      ? getDoc(doc(db, COLLECTIONS.contractors, phase.contractor_id))
+      ? readRelatedDoc(getDoc(doc(db, COLLECTIONS.contractors, phase.contractor_id)))
       : Promise.resolve(null),
-    getDoc(doc(db, COLLECTIONS.projects, phase.project_id)),
+    readRelatedDoc(getDoc(doc(db, COLLECTIONS.projects, phase.project_id))),
   ]);
 
   return {
