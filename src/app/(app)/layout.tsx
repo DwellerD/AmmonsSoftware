@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/AuthProvider";
 import { AppShell } from "@/components/layout/AppShell";
 import { LoadingState } from "@/components/ui/States";
-import { isFirebaseConfigured } from "@/lib/firebase/client";
+import { getFirebaseAuth, isFirebaseConfigured } from "@/lib/firebase/client";
 
 /**
  * Layout for all authenticated screens (everything in the (app) route group).
@@ -23,11 +23,29 @@ export default function AuthenticatedLayout({
 }) {
   const { loading, firebaseUser } = useAuth();
   const router = useRouter();
+  const hadAuthenticatedUser = useRef(false);
 
   useEffect(() => {
-    if (!loading && !firebaseUser) {
-      router.replace("/login");
+    if (firebaseUser) {
+      hadAuthenticatedUser.current = true;
     }
+  }, [firebaseUser]);
+
+  useEffect(() => {
+    if (!isFirebaseConfigured || loading || firebaseUser) return;
+
+    // Firebase can emit a brief null user during token/profile refreshes.
+    // Give established sessions a longer grace period before redirecting.
+    const delayMs = hadAuthenticatedUser.current ? 5_000 : 300;
+
+    // Delay redirect and verify currentUser is still null to avoid false bounces.
+    const redirectTimer = window.setTimeout(() => {
+      if (!getFirebaseAuth().currentUser) {
+        router.replace("/login");
+      }
+    }, delayMs);
+
+    return () => window.clearTimeout(redirectTimer);
   }, [loading, firebaseUser, router]);
 
   // Friendly notice if the project hasn't been configured yet.

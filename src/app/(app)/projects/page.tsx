@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { PageContainer, PageHeader } from "@/components/ui/PageContainer";
 import { Card, CardBody } from "@/components/ui/Card";
@@ -28,21 +28,34 @@ export default function ProjectsPage() {
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
 
-  async function load() {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async (background = false) => {
+    if (!background) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       setProjects(await listProjects());
+      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load projects.");
+      if (!background) {
+        setError(err instanceof Error ? err.message : "Failed to load projects.");
+      }
     } finally {
-      setLoading(false);
+      if (!background) {
+        setLoading(false);
+      }
     }
-  }
+  }, []);
 
   useEffect(() => {
-    load();
-  }, []);
+    void load();
+    const intervalId = window.setInterval(() => {
+      void load(true);
+    }, 5000);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [load]);
 
   return (
     <PageContainer>
@@ -61,7 +74,7 @@ export default function ProjectsPage() {
           onCancel={() => setShowForm(false)}
           onCreated={() => {
             setShowForm(false);
-            load();
+            void load();
           }}
         />
       )}

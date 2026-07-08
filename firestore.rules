@@ -161,12 +161,15 @@ service cloud.firestore {
         (
           request.auth.token.email == resource.data.invited_email &&
           resource.data.status == "Pending" &&
-          request.resource.data.status == "Accepted" &&
+          request.resource.data.status in ["Accepted", "Rejected"] &&
           request.resource.data.project_id == resource.data.project_id &&
           request.resource.data.invited_email == resource.data.invited_email &&
           request.resource.data.token == resource.data.token &&
           request.resource.data.project_name == resource.data.project_name &&
           request.resource.data.message == resource.data.message &&
+          request.resource.data.invited_by == resource.data.invited_by &&
+          request.resource.data.invited_by_email == resource.data.invited_by_email &&
+          request.resource.data.expires_at == resource.data.expires_at &&
           request.resource.data.can_view_project == resource.data.can_view_project &&
           request.resource.data.can_edit_project == resource.data.can_edit_project &&
           request.resource.data.can_view_trades == resource.data.can_view_trades &&
@@ -181,7 +184,29 @@ service cloud.firestore {
           request.resource.data.can_edit_documents == resource.data.can_edit_documents &&
           request.resource.data.can_view_activity == resource.data.can_view_activity &&
           request.resource.data.can_edit_activity == resource.data.can_edit_activity &&
-          request.resource.data.can_manage_members == resource.data.can_manage_members
+          request.resource.data.can_manage_members == resource.data.can_manage_members &&
+          (
+            (
+              request.resource.data.status == "Accepted" &&
+              request.resource.data.accepted_by == request.auth.uid &&
+              request.resource.data.accepted_at != null &&
+              request.resource.data.diff(resource.data).changedKeys().hasOnly([
+                "status",
+                "accepted_by",
+                "accepted_at",
+                "updated_at"
+              ])
+            ) ||
+            (
+              request.resource.data.status == "Rejected" &&
+              request.resource.data.accepted_by == resource.data.accepted_by &&
+              request.resource.data.accepted_at == resource.data.accepted_at &&
+              request.resource.data.diff(resource.data).changedKeys().hasOnly([
+                "status",
+                "updated_at"
+              ])
+            )
+          )
         )
       );
       allow delete: if signedIn() && canManageMembers(resource.data.project_id);

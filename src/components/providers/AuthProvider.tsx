@@ -58,9 +58,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const auth = getFirebaseAuth();
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setFirebaseUser(user);
+      let nextUser = user;
+      if (
+        !nextUser &&
+        "authStateReady" in auth &&
+        typeof auth.authStateReady === "function"
+      ) {
+        await auth.authStateReady();
+        nextUser = auth.currentUser;
+      }
 
-      if (!user) {
+      setFirebaseUser(nextUser);
+
+      if (!nextUser) {
         setProfile(null);
         setLoading(false);
         return;
@@ -69,31 +79,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Load (or lazily create) the user's profile document.
       try {
         const db = getDb();
-        const ref = doc(db, "users", user.uid);
+        const ref = doc(db, "users", nextUser.uid);
         const snap = await getDoc(ref);
 
         if (snap.exists()) {
           const data = snap.data();
           setProfile({
-            id: user.uid,
-            email: user.email,
-            full_name: data.full_name ?? user.displayName ?? null,
+            id: nextUser.uid,
+            email: nextUser.email,
+            full_name: data.full_name ?? nextUser.displayName ?? null,
             role: (data.role as UserRole) ?? DEFAULT_ROLE,
             created_at: tsToIso(data.created_at),
             updated_at: tsToIso(data.updated_at),
           });
         } else {
           await setDoc(ref, {
-            email: user.email,
-            full_name: user.displayName ?? "",
+            email: nextUser.email,
+            full_name: nextUser.displayName ?? "",
             role: DEFAULT_ROLE,
             created_at: serverTimestamp(),
             updated_at: serverTimestamp(),
           });
           setProfile({
-            id: user.uid,
-            email: user.email,
-            full_name: user.displayName ?? null,
+            id: nextUser.uid,
+            email: nextUser.email,
+            full_name: nextUser.displayName ?? null,
             role: DEFAULT_ROLE,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),

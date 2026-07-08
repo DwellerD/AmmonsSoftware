@@ -512,23 +512,32 @@ export interface NewProjectInput {
 }
 
 export async function createProject(input: NewProjectInput): Promise<Project> {
+  const auth = getFirebaseAuth();
+  if ("authStateReady" in auth && typeof auth.authStateReady === "function") {
+    await auth.authStateReady();
+  }
+  const userId = auth.currentUser?.uid;
+  if (!userId) {
+    throw new Error("You must be signed in.");
+  }
+
   const ref = await addDoc(collection(getDb(), COLLECTIONS.projects), {
     name: input.name,
     location: input.location || null,
     start_date: input.start_date || null,
     estimated_end_date: input.estimated_end_date || null,
     notes: input.notes || null,
-    created_by: uid(),
+    created_by: userId,
     created_at: serverTimestamp(),
     updated_at: serverTimestamp(),
   });
   const project = mapProject((await getDoc(ref)) as Snap);
-  const userId = requireUid();
   await setDoc(doc(getDb(), COLLECTIONS.projectAccess, accessDocId(project.id, userId)), {
     project_id: project.id,
     user_id: userId,
-    email: getFirebaseAuth().currentUser?.email ?? null,
+    email: auth.currentUser?.email ?? null,
     ...fullProjectPermissions(),
+    invite_token: null,
     created_by: userId,
     created_at: serverTimestamp(),
     updated_at: serverTimestamp(),
@@ -672,9 +681,21 @@ export async function getProjectInviteByToken(token: string): Promise<ProjectInv
   return snap.exists() ? mapProjectInvite(snap as Snap) : null;
 }
 
+function ensureInviteIsPending(invite: ProjectInvite): void {
+  if (invite.status !== "Pending") {
+    throw new Error(`This invite is already ${invite.status.toLowerCase()}.`);
+  }
+  if (invite.expires_at && new Date(invite.expires_at).getTime() <= Date.now()) {
+    throw new Error("This invite has expired.");
+  }
+}
+
 export async function revokeProjectInvite(token: string): Promise<ProjectInvite> {
   const invite = await getProjectInviteByToken(token);
   if (!invite) throw new Error("Invite not found.");
+  if (invite.status !== "Pending") {
+    throw new Error("Only pending invites can be revoked.");
+  }
   await requireProjectPermission(invite.project_id, "can_manage_members");
   const ref = doc(getDb(), COLLECTIONS.projectInvites, inviteDocId(token));
   await updateDoc(ref, { status: "Revoked", updated_at: serverTimestamp() });
@@ -684,6 +705,7 @@ export async function revokeProjectInvite(token: string): Promise<ProjectInvite>
 export async function acceptProjectInvite(token: string): Promise<ProjectAccess> {
   const invite = await getProjectInviteByToken(token);
   if (!invite) throw new Error("Invite not found.");
+  ensureInviteIsPending(invite);
   const auth = getFirebaseAuth().currentUser;
   if (!auth) throw new Error("You must be signed in to accept an invite.");
   if ((auth.email ?? "").toLowerCase() !== invite.invited_email.toLowerCase()) {
@@ -711,6 +733,26 @@ export async function acceptProjectInvite(token: string): Promise<ProjectAccess>
   });
 
   return mapProjectAccess((await getDoc(accessRef)) as Snap);
+}
+
+export async function rejectProjectInvite(token: string): Promise<ProjectInvite> {
+  const invite = await getProjectInviteByToken(token);
+  if (!invite) throw new Error("Invite not found.");
+  ensureInviteIsPending(invite);
+
+  const auth = getFirebaseAuth().currentUser;
+  if (!auth) throw new Error("You must be signed in to reject an invite.");
+  if ((auth.email ?? "").toLowerCase() !== invite.invited_email.toLowerCase()) {
+    throw new Error("That invite was sent to a different email address.");
+  }
+
+  const ref = doc(getDb(), COLLECTIONS.projectInvites, inviteDocId(token));
+  await updateDoc(ref, {
+    status: "Rejected",
+    updated_at: serverTimestamp(),
+  });
+
+  return mapProjectInvite((await getDoc(ref)) as Snap);
 }
 
 // ---------------------------------------------------------------------------

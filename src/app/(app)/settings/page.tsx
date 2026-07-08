@@ -44,7 +44,8 @@ export default function SettingsPage() {
   );
 
   useEffect(() => {
-    setFullName(profile?.full_name ?? firebaseUser?.displayName ?? "");
+    const authDisplayName = firebaseUser?.displayName?.trim();
+    setFullName(authDisplayName || profile?.full_name || "");
   }, [profile?.full_name, firebaseUser?.displayName]);
 
   useEffect(() => {

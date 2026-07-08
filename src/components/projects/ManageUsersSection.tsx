@@ -23,6 +23,8 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { ErrorAlert, LoadingState } from "@/components/ui/States";
 import { Field, Input } from "@/components/ui/Field";
 
+type MemberDialogMode = "menu" | "edit" | "remove";
+
 interface ManageUsersSectionProps {
   projectId: string;
   projectName: string;
@@ -49,7 +51,8 @@ export function ManageUsersSection({
     );
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
+  const [memberDialogTarget, setMemberDialogTarget] = useState<ProjectAccess | null>(null);
+  const [memberDialogMode, setMemberDialogMode] = useState<MemberDialogMode>("menu");
   const [memberDrafts, setMemberDrafts] = useState<Record<string, ProjectPermissionState>>({});
 
   const canManage = Boolean(access?.can_manage_members);
@@ -106,6 +109,24 @@ export function ManageUsersSection({
     return null;
   }
 
+  const activeMember = memberDialogTarget
+    ? members.find((member) => member.user_id === memberDialogTarget.user_id) ?? memberDialogTarget
+    : null;
+
+  const activeMemberDraft = activeMember
+    ? memberDrafts[activeMember.user_id] ?? permissionStateFromFields(activeMember)
+    : null;
+
+  function openMemberDialog(member: ProjectAccess) {
+    setMemberDialogTarget(member);
+    setMemberDialogMode("menu");
+  }
+
+  function closeMemberDialog() {
+    setMemberDialogTarget(null);
+    setMemberDialogMode("menu");
+  }
+
   async function refresh() {
     const [projectMembers, projectInvites] = await Promise.all([
       listProjectMembers(projectId),
@@ -120,6 +141,12 @@ export function ManageUsersSection({
       });
       return next;
     });
+    if (
+      memberDialogTarget &&
+      !projectMembers.some((member) => member.user_id === memberDialogTarget.user_id)
+    ) {
+      closeMemberDialog();
+    }
   }
 
   async function handleInvite(e: React.FormEvent) {
@@ -162,7 +189,7 @@ export function ManageUsersSection({
         ...draft,
         email: member.email,
       });
-      setEditingMemberId(null);
+      setMemberDialogMode("menu");
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update access.");
@@ -179,6 +206,7 @@ export function ManageUsersSection({
     setError(null);
     try {
       await removeProjectAccess(projectId, member.user_id);
+      closeMemberDialog();
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to remove member.");
@@ -207,192 +235,293 @@ export function ManageUsersSection({
   }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <CardTitle>Manage users</CardTitle>
-          <p className="mt-1 text-sm text-ink-500">
-            Invite GC/site supers to this project and control exactly what they
-            can see or edit.
-          </p>
-        </div>
-      </CardHeader>
-      <CardBody className="space-y-6">
-        {inviteUrl && (
-          <div className="rounded-2xl border border-brand-500/30 bg-surface p-4 text-sm text-ink-700">
-            <p className="font-medium text-ink-900">Invite link ready</p>
-            <p className="mt-1 break-all text-xs text-ink-600">{inviteUrl}</p>
+    <>
+      <Card>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle>Manage users</CardTitle>
+            <p className="mt-1 text-sm text-ink-500">
+              Invite GC/site supers to this project and control exactly what they
+              can see or edit.
+            </p>
           </div>
-        )}
-
-        <form onSubmit={handleInvite} className="space-y-4 rounded-2xl border border-ink-200 bg-surface p-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Invite email" htmlFor="invite-email" required>
-              <Input
-                id="invite-email"
-                type="email"
-                required
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="superintendent@company.com"
-              />
-            </Field>
-            <Field label="Message" htmlFor="invite-message">
-              <Input
-                id="invite-message"
-                value={inviteMessage}
-                onChange={(e) => setInviteMessage(e.target.value)}
-                placeholder="Optional note for the invitee"
-              />
-            </Field>
-          </div>
-
-          <PermissionChecklist
-            value={invitePermissions}
-            onChange={setInvitePermissions}
-            title="Invite permissions"
-            description="Pick exactly what this person can view or edit."
-            defaultOpen={false}
-          />
-
-          <div className="flex flex-wrap gap-3">
-            <Button type="submit" loading={savingId === "invite"}>
-              Create invite
-            </Button>
-          </div>
-        </form>
-
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold text-ink-900">Members</h3>
-              <p className="text-xs text-ink-500">Active project access.</p>
+        </CardHeader>
+        <CardBody className="space-y-6">
+          {inviteUrl && (
+            <div className="rounded-2xl border border-brand-500/30 bg-surface p-4 text-sm text-ink-700">
+              <p className="font-medium text-ink-900">Invite link ready</p>
+              <p className="mt-1 break-all text-xs text-ink-600">{inviteUrl}</p>
             </div>
-          </div>
+          )}
+
+          <form onSubmit={handleInvite} className="space-y-4 rounded-2xl border border-ink-200 bg-surface p-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="Invite email" htmlFor="invite-email" required>
+                <Input
+                  id="invite-email"
+                  type="email"
+                  required
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="superintendent@company.com"
+                />
+              </Field>
+              <Field label="Message" htmlFor="invite-message">
+                <Input
+                  id="invite-message"
+                  value={inviteMessage}
+                  onChange={(e) => setInviteMessage(e.target.value)}
+                  placeholder="Optional note for the invitee"
+                />
+              </Field>
+            </div>
+
+            <PermissionChecklist
+              value={invitePermissions}
+              onChange={setInvitePermissions}
+              title="Invite permissions"
+              description="Pick exactly what this person can view or edit."
+              defaultOpen={false}
+            />
+
+            <div className="flex flex-wrap gap-3">
+              <Button type="submit" loading={savingId === "invite"}>
+                Create invite
+              </Button>
+            </div>
+          </form>
 
           <div className="space-y-3">
-            {memberRows.map((member) => {
-              const isOwner = member.user_id === access?.user_id;
-              const isEditing = editingMemberId === member.user_id;
-              return (
-                <div key={member.id} className="rounded-2xl border border-ink-200 bg-surface p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="font-medium text-ink-900">
-                        {member.email ?? member.user_id}
-                        {isOwner ? " (you)" : ""}
-                      </p>
-                      <p className="text-xs text-ink-500">{member.summary}</p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {!isOwner && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setEditingMemberId(isEditing ? null : member.user_id)}
-                        >
-                          {isEditing ? "Close" : "Edit access"}
-                        </Button>
-                      )}
-                      {!isOwner && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleRemoveMember(member)}
-                          loading={savingId === member.user_id}
-                        >
-                          Remove
-                        </Button>
-                      )}
-                    </div>
-                  </div>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-ink-900">Members</h3>
+                <p className="text-xs text-ink-500">Active project access.</p>
+              </div>
+            </div>
 
-                  {isEditing && (
-                    <div className="mt-4 border-t border-ink-100 pt-4">
-                      <PermissionChecklist
-                        value={memberDrafts[member.user_id] ?? permissionStateFromFields(member)}
-                        onChange={(next) =>
-                          setMemberDrafts((current) => ({
-                            ...current,
-                            [member.user_id]: next,
-                          }))
-                        }
-                        title="Edit permissions"
-                        description="Change exactly what this person can see or edit."
-                        defaultOpen
-                      />
-                      <div className="mt-4 flex flex-wrap gap-3">
-                        <Button
-                          type="button"
-                          loading={savingId === member.user_id}
-                          onClick={() => handleSaveMember(member)}
-                        >
-                          Save access
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={() => setEditingMemberId(null)}
-                        >
-                          Cancel
-                        </Button>
+            {memberRows.length === 0 ? (
+              <p className="rounded-2xl border border-ink-200 bg-ink-50 px-4 py-3 text-sm text-ink-600">
+                No members have access to this project yet.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {memberRows.map((member) => {
+                  const isSelf = member.user_id === access?.user_id;
+                  return (
+                    <div
+                      key={member.id}
+                      className="rounded-2xl border border-ink-200 bg-surface p-4"
+                      aria-label={`Member ${member.email ?? member.user_id}`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-ink-900">
+                            {member.email ?? member.user_id}
+                            {isSelf ? " (you)" : ""}
+                          </p>
+                          <p className="text-xs text-ink-500">{member.summary}</p>
+                        </div>
+                        {!isSelf && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openMemberDialog(member)}
+                          >
+                            Revoke
+                          </Button>
+                        )}
                       </div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <div>
-            <h3 className="text-sm font-semibold text-ink-900">Pending invites</h3>
-            <p className="text-xs text-ink-500">Share the link or send it from your email client.</p>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="space-y-3">
-            {invites.map((invite) => {
-              const url = buildProjectInviteUrl(window.location.origin, invite.token);
-              return (
-                <div key={invite.id} className="rounded-2xl border border-ink-200 bg-surface p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="font-medium text-ink-900">{invite.invited_email}</p>
-                      <p className="text-xs text-ink-500">
-                        {invite.status} · {projectPermissionsSummary(invite)}
-                      </p>
+            <div>
+              <h3 className="text-sm font-semibold text-ink-900">Invites</h3>
+              <p className="text-xs text-ink-500">Share the link or send it from your email client.</p>
+            </div>
+
+            {invites.length === 0 ? (
+              <p className="rounded-2xl border border-ink-200 bg-ink-50 px-4 py-3 text-sm text-ink-600">
+                No invites created yet.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {invites.map((invite) => {
+                  const url = buildProjectInviteUrl(window.location.origin, invite.token);
+                  const canRevoke = invite.status === "Pending";
+                  return (
+                    <div
+                      key={invite.id}
+                      className="rounded-2xl border border-ink-200 bg-surface p-4"
+                      aria-label={`Invite ${invite.invited_email}`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-ink-900">{invite.invited_email}</p>
+                          <p className="text-xs text-ink-500">
+                            {invite.status} · {projectPermissionsSummary(invite)}
+                          </p>
+                          <p className="mt-1 text-xs text-ink-500">
+                            Invited by {invite.invited_by_email ?? "Unknown"}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleCopyInviteLink(invite.token)}
+                          >
+                            Copy link
+                          </Button>
+                          {canRevoke && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleRevokeInvite(invite.token)}
+                              loading={savingId === invite.token}
+                            >
+                              Revoke
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="mt-2 break-all text-xs text-ink-500">{url}</p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleCopyInviteLink(invite.token)}
-                      >
-                        Copy link
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleRevokeInvite(invite.token)}
-                        loading={savingId === invite.token}
-                      >
-                        Revoke
-                      </Button>
-                    </div>
-                  </div>
-                  <p className="mt-2 break-all text-xs text-ink-500">{url}</p>
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            )}
           </div>
+        </CardBody>
+      </Card>
+
+      {activeMember && activeMemberDraft && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink-900/45 p-4 pt-8">
+          <Card
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="manage-member-dialog-title"
+            className="w-full max-w-3xl overflow-hidden"
+          >
+            <CardHeader className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle id="manage-member-dialog-title">
+                  Manage {activeMember.email ?? activeMember.user_id}
+                </CardTitle>
+                <p className="mt-1 text-xs text-ink-500">
+                  Current access: {projectPermissionsSummary(activeMember)}
+                </p>
+              </div>
+              <Button type="button" variant="ghost" size="sm" onClick={closeMemberDialog}>
+                Close
+              </Button>
+            </CardHeader>
+
+            <CardBody className="max-h-[70vh] space-y-4 overflow-y-auto">
+              {memberDialogMode === "menu" && (
+                <div className="space-y-4">
+                  <p className="text-sm text-ink-600">
+                    Choose whether you want to edit this member&apos;s access live
+                    or remove them from this project completely.
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    <Button type="button" onClick={() => setMemberDialogMode("edit")}>
+                      Edit access live
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      onClick={() => setMemberDialogMode("remove")}
+                    >
+                      Remove from project completely
+                    </Button>
+                    <Button type="button" variant="outline" onClick={closeMemberDialog}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {memberDialogMode === "edit" && (
+                <div className="space-y-4">
+                  <PermissionChecklist
+                    value={activeMemberDraft}
+                    onChange={(next) =>
+                      setMemberDrafts((current) => ({
+                        ...current,
+                        [activeMember.user_id]: next,
+                      }))
+                    }
+                    title="Edit permissions"
+                    description="Change exactly what this person can see or edit."
+                    defaultOpen
+                  />
+                  <div className="flex flex-wrap gap-3">
+                    <Button
+                      type="button"
+                      loading={savingId === activeMember.user_id}
+                      onClick={() => handleSaveMember(activeMember)}
+                    >
+                      Save access
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setMemberDialogMode("menu")}
+                    >
+                      Back
+                    </Button>
+                    <Button type="button" variant="ghost" onClick={closeMemberDialog}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {memberDialogMode === "remove" && (
+                <div className="space-y-4">
+                  <p className="text-sm text-ink-700">
+                    Remove <span className="font-medium text-ink-900">{activeMember.email ?? activeMember.user_id}</span>
+                    {" "}
+                    from this project?
+                  </p>
+                  <p className="text-xs text-ink-500">
+                    They will immediately lose project visibility and access.
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    <Button
+                      type="button"
+                      variant="danger"
+                      loading={savingId === activeMember.user_id}
+                      onClick={() => handleRemoveMember(activeMember)}
+                    >
+                      Remove from project
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setMemberDialogMode("menu")}
+                    >
+                      Back
+                    </Button>
+                    <Button type="button" variant="ghost" onClick={closeMemberDialog}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardBody>
+          </Card>
         </div>
-      </CardBody>
-    </Card>
+      )}
+    </>
   );
 }
 

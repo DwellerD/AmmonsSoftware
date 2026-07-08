@@ -14,15 +14,39 @@ export class SettingsPage {
   }
 
   async saveFullName(value: string): Promise<void> {
+    const saveButton = this.page.getByRole("button", { name: "Save profile" });
+    const profileUpdateResponse = this.page.waitForResponse(
+      (response) =>
+        response.url().includes("identitytoolkit.googleapis.com/v1/accounts:update") &&
+        response.status() === 200,
+      { timeout: 30_000 },
+    );
+
     await this.page.locator("#settings-full-name").fill(value);
-    await this.page.getByRole("button", { name: "Save profile" }).click();
-    await expect(
-      this.page.getByText("Settings saved. Your profile has been updated."),
-    ).toBeVisible();
+    await saveButton.click();
+
+    // Wait for Firebase Auth profile mutation to complete before verification loops.
+    await profileUpdateResponse;
+
+    await expect(async () => {
+      await this.goto();
+      await expect(this.page.locator("#settings-full-name")).toHaveValue(value, {
+        timeout: 2_000,
+      });
+    }).toPass({ timeout: 30_000 });
+  }
+
+  async readFullName(): Promise<string> {
+    return this.page.locator("#settings-full-name").inputValue();
   }
 
   async expectFullName(value: string): Promise<void> {
-    await expect(this.page.locator("#settings-full-name")).toHaveValue(value);
+    await expect(async () => {
+      await this.goto();
+      await expect(this.page.locator("#settings-full-name")).toHaveValue(value, {
+        timeout: 3_000,
+      });
+    }).toPass({ timeout: 30_000 });
   }
 
   async setTheme(theme: "Light" | "Dark" | "System"): Promise<void> {

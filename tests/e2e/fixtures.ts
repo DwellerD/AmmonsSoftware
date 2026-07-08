@@ -8,6 +8,9 @@ import { DocumentVaultPage } from "./pages/DocumentVaultPage";
 import { PunchListPage } from "./pages/PunchListPage";
 import { MaterialOrdersPage } from "./pages/MaterialOrdersPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { ProjectsPage } from "./pages/ProjectsPage";
+import { ProjectDetailPage } from "./pages/ProjectDetailPage";
+import { InvitePage } from "./pages/InvitePage";
 
 /**
  * Custom fixtures for the suite.
@@ -30,6 +33,9 @@ interface PhaseBinderFixtures {
   punchList: PunchListPage;
   materialOrders: MaterialOrdersPage;
   settings: SettingsPage;
+  projects: ProjectsPage;
+  projectDetail: ProjectDetailPage;
+  invitePage: InvitePage;
   app: PhaseBinderApp;
 }
 
@@ -49,6 +55,9 @@ export interface PhaseBinderApp {
   punchList: PunchListPage;
   materialOrders: MaterialOrdersPage;
   settings: SettingsPage;
+  projects: ProjectsPage;
+  projectDetail: ProjectDetailPage;
+  invitePage: InvitePage;
 }
 
 export const test = base.extend<PhaseBinderFixtures>({
@@ -79,6 +88,15 @@ export const test = base.extend<PhaseBinderFixtures>({
   settings: async ({ page }, use) => {
     await use(new SettingsPage(page));
   },
+  projects: async ({ page }, use) => {
+    await use(new ProjectsPage(page));
+  },
+  projectDetail: async ({ page }, use) => {
+    await use(new ProjectDetailPage(page));
+  },
+  invitePage: async ({ page }, use) => {
+    await use(new InvitePage(page));
+  },
   app: async (
     {
       page,
@@ -91,6 +109,9 @@ export const test = base.extend<PhaseBinderFixtures>({
       punchList,
       materialOrders,
       settings,
+      projects,
+      projectDetail,
+      invitePage,
     },
     use,
   ) => {
@@ -105,6 +126,9 @@ export const test = base.extend<PhaseBinderFixtures>({
       punchList,
       materialOrders,
       settings,
+      projects,
+      projectDetail,
+      invitePage,
     });
   },
 });

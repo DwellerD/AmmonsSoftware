@@ -37,6 +37,32 @@ export class AppNav {
       await expect(this.page).not.toHaveURL(/\/login/);
     }
   }
+
+  /** Sign out of the current session and confirm we land on login. */
+  async signOut(): Promise<void> {
+    const signOutButton = this.page.getByRole("button", { name: "Sign out" }).first();
+    if (!(await signOutButton.isVisible())) {
+      const toggleNav = this.page.getByRole("button", { name: "Toggle navigation" });
+      if (await toggleNav.isVisible()) {
+        await toggleNav.click();
+      }
+    }
+    const closeNextDevTools = this.page.getByRole("button", {
+      name: "Close Next.js Dev Tools",
+    });
+    if (await closeNextDevTools.isVisible()) {
+      await closeNextDevTools.click();
+    }
+
+    // Dispatch a direct click event so overlay portals cannot steal pointer input.
+    await signOutButton.evaluate((element) => {
+      (element as HTMLButtonElement).click();
+    });
+    await expect(this.page.getByRole("button", { name: "Sign in" })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(this.page).toHaveURL(/\/login/, { timeout: 30_000 });
+  }
 }
 
 function escapeRegExp(value: string): string {

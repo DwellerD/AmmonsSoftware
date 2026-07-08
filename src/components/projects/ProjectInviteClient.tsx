@@ -7,6 +7,7 @@ import { useAuth } from "@/components/providers/AuthProvider";
 import {
   acceptProjectInvite,
   getProjectInviteByToken,
+  rejectProjectInvite,
 } from "@/lib/api";
 import {
   buildProjectInvitePath,
@@ -27,6 +28,7 @@ export function ProjectInviteClient({ token }: ProjectInviteClientProps) {
   const [invite, setInvite] = useState<ProjectInvite | null>(null);
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -69,7 +71,41 @@ export function ProjectInviteClient({ token }: ProjectInviteClientProps) {
         <CardBody className="space-y-3 text-sm text-ink-600">
           <h1 className="text-xl font-semibold text-ink-900">Invite unavailable</h1>
           <p>This invite is {invite.status.toLowerCase()}.</p>
+          <p>
+            Project: <span className="font-medium text-ink-800">{invite.project_name}</span>
+          </p>
+          <p>
+            Invited by: <span className="font-medium text-ink-800">{invite.invited_by_email ?? "Unknown"}</span>
+          </p>
           <p className="text-xs text-ink-500">Token path: {buildProjectInvitePath(token)}</p>
+        </CardBody>
+      </Card>
+    );
+  }
+
+  if (invite.status === "Rejected") {
+    return (
+      <Card>
+        <CardBody className="space-y-4 text-sm text-ink-700">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-600">
+              Project invite
+            </p>
+            <h1 className="mt-2 text-2xl font-semibold text-ink-900">
+              Invite declined
+            </h1>
+            <p className="mt-2">
+              You declined access to {invite.project_name}.
+            </p>
+            <p className="mt-1 text-xs text-ink-500">
+              Invited by {invite.invited_by_email ?? "a project manager"}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Link href="/projects">
+              <Button variant="outline">Back to projects</Button>
+            </Link>
+          </div>
         </CardBody>
       </Card>
     );
@@ -119,6 +155,20 @@ export function ProjectInviteClient({ token }: ProjectInviteClientProps) {
     }
   }
 
+  async function handleReject() {
+    setRejecting(true);
+    setError(null);
+    try {
+      const nextInvite = await rejectProjectInvite(token);
+      setInvite(nextInvite);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reject invite.");
+    } finally {
+      setRejecting(false);
+    }
+  }
+
   const loginHref = `/login?redirectTo=${encodeURIComponent(`/invite/${token}`)}`;
   const emailMatches =
     firebaseUser?.email &&
@@ -138,6 +188,12 @@ export function ProjectInviteClient({ token }: ProjectInviteClientProps) {
           <p className="mt-2 text-sm text-ink-600">
             This invite grants: {projectPermissionsSummary(invite)}
           </p>
+          <p className="mt-1 text-sm text-ink-600">
+            Invited by: {invite.invited_by_email ?? "a project manager"}
+          </p>
+          <p className="mt-1 text-sm text-ink-600">
+            Invitee: {invite.invited_email}
+          </p>
         </div>
 
         {invite.message && (
@@ -154,7 +210,7 @@ export function ProjectInviteClient({ token }: ProjectInviteClientProps) {
               Use the email address {invite.invited_email} to accept this invite.
             </p>
             <Link href={loginHref}>
-              <Button>Sign in</Button>
+              <Button>Sign in or create account</Button>
             </Link>
           </div>
         ) : !emailMatches ? (
@@ -173,6 +229,13 @@ export function ProjectInviteClient({ token }: ProjectInviteClientProps) {
           <div className="flex flex-wrap gap-3">
             <Button onClick={handleAccept} loading={accepting}>
               Accept invite
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleReject}
+              loading={rejecting}
+            >
+              Reject invite
             </Button>
             <Link href="/projects">
               <Button variant="outline">Back to projects</Button>

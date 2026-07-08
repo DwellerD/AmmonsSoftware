@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { PageContainer, PageHeader } from "@/components/ui/PageContainer";
@@ -34,29 +34,43 @@ export default function ProjectDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function load() {
+  const load = useCallback(async (background = false) => {
+    if (!background) {
       setLoading(true);
       setError(null);
-      try {
-        const [p, t, ph] = await Promise.all([
-          getProject(projectId),
-          listTrades(projectId),
-          listTradePhases({ projectId }),
-        ]);
-        setProject(p);
-        setTrades(t);
-        setPhases(ph);
-      } catch (err) {
+    }
+    try {
+      const [p, t, ph] = await Promise.all([
+        getProject(projectId),
+        listTrades(projectId),
+        listTradePhases({ projectId }),
+      ]);
+      setProject(p);
+      setTrades(t);
+      setPhases(ph);
+      setError(null);
+    } catch (err) {
+      if (!background) {
         setError(
           err instanceof Error ? err.message : "Failed to load project.",
         );
-      } finally {
+      }
+    } finally {
+      if (!background) {
         setLoading(false);
       }
     }
-    load();
   }, [projectId]);
+
+  useEffect(() => {
+    void load();
+    const intervalId = window.setInterval(() => {
+      void load(true);
+    }, 5000);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [load]);
 
   if (loading) {
     return (

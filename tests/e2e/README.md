@@ -20,6 +20,8 @@ capture labelled screenshots at each milestone — handy for a QA dashboard.
 | `punch-item-lifecycle.spec.ts` | Create → assign → filter → Open → In Progress → Resolved, with open-count + activity checks |
 | `role-access-control.spec.ts` | Signed-out routes redirect to login; GC reaches every screen (contractor blocking is a documented pending feature) |
 | `settings-and-automation.spec.ts` | Settings profile save, dark-mode persistence/neutral material rows, and automatic Needs Inspection transition |
+| `data-integrity-and-isolation.spec.ts` | Profile data isolation across accounts and owner-only project visibility/persistence across account switching |
+| `project-sharing-and-invites.spec.ts` | Revoke dialog supports live access edits/removal, and invitees can accept or reject with owner-visible status updates |
 
 ## Why the spec files are intentionally thin
 

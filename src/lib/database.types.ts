@@ -141,7 +141,7 @@ export interface ProjectInvite {
   can_view_activity: boolean;
   can_edit_activity: boolean;
   can_manage_members: boolean;
-  status: "Pending" | "Accepted" | "Revoked" | "Expired";
+  status: "Pending" | "Accepted" | "Rejected" | "Revoked" | "Expired";
   invited_by: string | null;
   invited_by_email: string | null;
   accepted_by: string | null;
