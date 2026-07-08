@@ -22,25 +22,20 @@ export class ProjectDetailPage {
 
     await this.page.getByRole("button", { name: "Create invite" }).click();
 
-    const row = this.inviteRow(invitedEmail);
-    await expect(row).toBeVisible({ timeout: 30_000 });
+    const inviteReady = this.page.getByText("Invite link ready").first();
+    await expect(inviteReady).toBeVisible({ timeout: 30_000 });
 
-    const url = (await row.locator("p").last().innerText()).trim();
+    const urlText = this.page
+      .locator("p")
+      .filter({ hasText: /\/invite\// })
+      .first();
+    await expect(urlText).toBeVisible({ timeout: 30_000 });
+
+    const url = (await urlText.innerText()).trim();
     if (!url.includes("/invite/")) {
       throw new Error(`Invite link was not visible for ${invitedEmail}.`);
     }
     return url;
-  }
-
-  async expectInviteStatus(invitedEmail: string, status: string): Promise<void> {
-    const row = this.inviteRow(invitedEmail);
-    await expect(row).toContainText(status, { timeout: 30_000 });
-  }
-
-  async revokeInvite(invitedEmail: string): Promise<void> {
-    const row = this.inviteRow(invitedEmail);
-    await row.getByRole("button", { name: "Revoke" }).click();
-    await expect(row).toContainText("Revoked", { timeout: 30_000 });
   }
 
   async expectMemberVisible(email: string): Promise<void> {
@@ -54,22 +49,11 @@ export class ProjectDetailPage {
   async openMemberManageDialog(email: string): Promise<void> {
     const row = this.memberRow(email);
     await expect(row).toBeVisible({ timeout: 30_000 });
-    await row.getByRole("button", { name: "Revoke" }).click();
+    await row.getByRole("button", { name: "Edit access" }).click();
     await expect(this.manageDialog()).toBeVisible({ timeout: 30_000 });
-  }
-
-  async chooseDialogEditAccess(): Promise<void> {
-    await this.manageDialog().getByRole("button", { name: "Edit access live" }).click();
     await expect(this.manageDialog().getByRole("button", { name: "Save access" })).toBeVisible({
       timeout: 30_000,
     });
-  }
-
-  async chooseDialogRemoveCompletely(): Promise<void> {
-    await this.manageDialog().getByRole("button", { name: "Remove from project completely" }).click();
-    await expect(
-      this.manageDialog().getByRole("button", { name: "Remove from project" }),
-    ).toBeVisible({ timeout: 30_000 });
   }
 
   async setDialogPermission(label: string, enabled: boolean): Promise<void> {
@@ -88,13 +72,14 @@ export class ProjectDetailPage {
 
   async saveDialogAccess(): Promise<void> {
     await this.manageDialog().getByRole("button", { name: "Save access" }).click();
-    await expect(this.manageDialog().getByRole("button", { name: "Edit access live" })).toBeVisible({
-      timeout: 30_000,
-    });
+    await expect(this.manageDialog()).toHaveCount(0, { timeout: 30_000 });
   }
 
-  async confirmDialogRemove(): Promise<void> {
-    await this.manageDialog().getByRole("button", { name: "Remove from project" }).click();
+  async revokeAllAccessFromDialog(): Promise<void> {
+    this.page.once("dialog", async (dialog) => {
+      await dialog.accept();
+    });
+    await this.manageDialog().getByRole("button", { name: "Revoke all access" }).click();
     await expect(this.manageDialog()).toHaveCount(0, { timeout: 30_000 });
   }
 
@@ -106,24 +91,9 @@ export class ProjectDetailPage {
       .first();
   }
 
-  private invitesSection(): Locator {
-    return this.page
-      .locator("div", {
-        has: this.page.getByRole("heading", { name: "Invites", exact: true }),
-      })
-      .first();
-  }
-
   private memberRow(email: string): Locator {
     return this.membersSection()
       .locator("div[aria-label^='Member ']")
-      .filter({ hasText: email })
-      .first();
-  }
-
-  private inviteRow(email: string): Locator {
-    return this.invitesSection()
-      .locator("div[aria-label^='Invite ']")
       .filter({ hasText: email })
       .first();
   }

@@ -702,6 +702,37 @@ export async function revokeProjectInvite(token: string): Promise<ProjectInvite>
   return mapProjectInvite((await getDoc(ref)) as Snap);
 }
 
+export async function revokeProjectInvitesForEmail(
+  projectId: string,
+  email: string,
+): Promise<void> {
+  await requireProjectPermission(projectId, "can_manage_members");
+  const normalizedEmail = email.trim().toLowerCase();
+  const snap = await getDocs(
+    query(
+      collection(getDb(), COLLECTIONS.projectInvites),
+      where("project_id", "==", projectId),
+    ),
+  );
+
+  const revokeOps = snap.docs
+    .filter((docSnap) => {
+      const data = docSnap.data();
+      return (
+        (data.invited_email as string | null)?.toLowerCase() === normalizedEmail &&
+        data.status === "Pending"
+      );
+    })
+    .map((docSnap) =>
+      updateDoc(docSnap.ref, {
+        status: "Revoked",
+        updated_at: serverTimestamp(),
+      }),
+    );
+
+  await Promise.all(revokeOps);
+}
+
 export async function acceptProjectInvite(token: string): Promise<ProjectAccess> {
   const invite = await getProjectInviteByToken(token);
   if (!invite) throw new Error("Invite not found.");

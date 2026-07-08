@@ -35,6 +35,7 @@ export async function runInviteAcceptEditAndRemoveFlow(
   await projects.createProject(projectName);
   await projects.openProject(projectName);
   await projectDetail.expectLoaded(projectName);
+  const projectDetailUrl = page.url();
 
   const inviteUrl = await projectDetail.createInvite(
     invitee.email,
@@ -44,12 +45,13 @@ export async function runInviteAcceptEditAndRemoveFlow(
 
   await nav.signOut();
 
+  await loginPage.signInAsGc();
   await invitePage.goto(inviteUrl);
   await invitePage.expectInviteDetails(projectName, gcEmail);
-  await invitePage.expectSignedOutPrompt(invitee.email);
-  await captureMilestone(page, testInfo, "Invite page requests sign in or account creation");
+  await invitePage.expectWrongAccount(gcEmail, invitee.email);
+  await captureMilestone(page, testInfo, "Wrong-account guard shown with switch-account action");
 
-  await invitePage.clickSignInOrCreate();
+  await invitePage.clickSwitchAccount();
   await loginPage.signUp(invitee.fullName, invitee.email, invitee.password, {
     expectedUrl: /\/invite\//,
     expectedHeading: null,
@@ -68,21 +70,22 @@ export async function runInviteAcceptEditAndRemoveFlow(
   await projectDetail.expectMemberVisible(invitee.email);
 
   await projectDetail.openMemberManageDialog(invitee.email);
-  await projectDetail.chooseDialogEditAccess();
   await projectDetail.setDialogPermission("View material orders", true);
   await projectDetail.saveDialogAccess();
-  await captureMilestone(page, testInfo, "Owner edited member access from revoke modal");
+  await captureMilestone(page, testInfo, "Owner edited member access from edit modal");
 
-  await projectDetail.chooseDialogRemoveCompletely();
-  await projectDetail.confirmDialogRemove();
+  await projectDetail.openMemberManageDialog(invitee.email);
+  await projectDetail.revokeAllAccessFromDialog();
   await projectDetail.expectMemberHidden(invitee.email);
-  await captureMilestone(page, testInfo, "Owner removed member from project via modal");
+  await captureMilestone(page, testInfo, "Owner revoked all member access from edit modal");
 
   await nav.signOut();
 
   await loginPage.signIn(invitee.email, invitee.password);
   await projects.expectProjectHidden(projectName);
-  await captureMilestone(page, testInfo, "Removed member no longer sees project");
+  await page.goto(projectDetailUrl);
+  await expectNoProjectAccess(page);
+  await captureMilestone(page, testInfo, "Removed member no longer sees or opens project");
 }
 
 /**
@@ -128,11 +131,18 @@ export async function runInviteRejectFlow(
   await captureMilestone(page, testInfo, "Invitee rejected the invite");
 
   await page.goto("/projects");
+  await projects.expectProjectHidden(projectName);
   await nav.signOut();
 
   await loginPage.signInAsGc();
   await projects.openProject(projectName);
-  await projectDetail.expectInviteStatus(invitee.email, "Rejected");
   await projectDetail.expectMemberHidden(invitee.email);
-  await captureMilestone(page, testInfo, "Owner sees rejected invite and no member access");
+  await captureMilestone(page, testInfo, "Owner confirms rejected invite did not grant member access");
+}
+
+async function expectNoProjectAccess(page: PhaseBinderApp["page"]): Promise<void> {
+  await page
+    .getByText(/Project not found|You do not have permission|Missing or insufficient permissions/i)
+    .first()
+    .waitFor({ state: "visible", timeout: 30_000 });
 }

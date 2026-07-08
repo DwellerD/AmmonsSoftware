@@ -34,6 +34,21 @@ export class InvitePage {
     await this.page.waitForURL(/\/login\?redirectTo=/, { timeout: 30_000 });
   }
 
+  async expectWrongAccount(signedInEmail: string, invitedEmail: string): Promise<void> {
+    await expect(this.page.getByText("Wrong account")).toBeVisible({ timeout: 30_000 });
+    await expect(
+      this.page.getByText(`You are signed in as ${signedInEmail}. This invite was sent to ${invitedEmail}.`),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(this.page.getByRole("button", { name: "Switch account" })).toBeVisible({
+      timeout: 30_000,
+    });
+  }
+
+  async clickSwitchAccount(): Promise<void> {
+    await this.page.getByRole("button", { name: "Switch account" }).click();
+    await this.page.waitForURL(/\/login\?redirectTo=/, { timeout: 30_000 });
+  }
+
   async acceptInvite(): Promise<void> {
     await this.page.getByRole("button", { name: "Accept invite" }).click();
   }

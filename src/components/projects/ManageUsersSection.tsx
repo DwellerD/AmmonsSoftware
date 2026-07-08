@@ -11,19 +11,16 @@ import {
 import {
   createProjectInvite,
   getMyProjectAccess,
-  listProjectInvites,
   listProjectMembers,
   removeProjectAccess,
-  revokeProjectInvite,
+  revokeProjectInvitesForEmail,
   updateProjectAccess,
 } from "@/lib/api";
-import type { ProjectAccess, ProjectInvite } from "@/lib/database.types";
+import type { ProjectAccess } from "@/lib/database.types";
 import { Button } from "@/components/ui/Button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/Card";
 import { ErrorAlert, LoadingState } from "@/components/ui/States";
 import { Field, Input } from "@/components/ui/Field";
-
-type MemberDialogMode = "menu" | "edit" | "remove";
 
 interface ManageUsersSectionProps {
   projectId: string;
@@ -36,7 +33,6 @@ export function ManageUsersSection({
 }: ManageUsersSectionProps) {
   const [access, setAccess] = useState<ProjectAccess | null>(null);
   const [members, setMembers] = useState<ProjectAccess[]>([]);
-  const [invites, setInvites] = useState<ProjectInvite[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -51,27 +47,30 @@ export function ManageUsersSection({
     );
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [memberDialogTarget, setMemberDialogTarget] = useState<ProjectAccess | null>(null);
-  const [memberDialogMode, setMemberDialogMode] = useState<MemberDialogMode>("menu");
-  const [memberDrafts, setMemberDrafts] = useState<Record<string, ProjectPermissionState>>({});
+  const [memberDialogTarget, setMemberDialogTarget] =
+    useState<ProjectAccess | null>(null);
+  const [memberDrafts, setMemberDrafts] = useState<
+    Record<string, ProjectPermissionState>
+  >({});
 
   const canManage = Boolean(access?.can_manage_members);
 
   useEffect(() => {
     let active = true;
+
     async function load() {
       setLoading(true);
       setError(null);
       try {
-        const [myAccess, projectMembers, projectInvites] = await Promise.all([
+        const [myAccess, projectMembers] = await Promise.all([
           getMyProjectAccess(projectId),
           listProjectMembers(projectId),
-          listProjectInvites(projectId),
         ]);
         if (!active) return;
+
         setAccess(myAccess);
         setMembers(projectMembers);
-        setInvites(projectInvites);
+
         const drafts: Record<string, ProjectPermissionState> = {};
         projectMembers.forEach((member) => {
           drafts[member.user_id] = permissionStateFromFields(member);
@@ -84,7 +83,8 @@ export function ManageUsersSection({
         if (active) setLoading(false);
       }
     }
-    load();
+
+    void load();
     return () => {
       active = false;
     };
@@ -110,7 +110,8 @@ export function ManageUsersSection({
   }
 
   const activeMember = memberDialogTarget
-    ? members.find((member) => member.user_id === memberDialogTarget.user_id) ?? memberDialogTarget
+    ? members.find((member) => member.user_id === memberDialogTarget.user_id) ??
+      memberDialogTarget
     : null;
 
   const activeMemberDraft = activeMember
@@ -119,21 +120,15 @@ export function ManageUsersSection({
 
   function openMemberDialog(member: ProjectAccess) {
     setMemberDialogTarget(member);
-    setMemberDialogMode("menu");
   }
 
   function closeMemberDialog() {
     setMemberDialogTarget(null);
-    setMemberDialogMode("menu");
   }
 
   async function refresh() {
-    const [projectMembers, projectInvites] = await Promise.all([
-      listProjectMembers(projectId),
-      listProjectInvites(projectId),
-    ]);
+    const projectMembers = await listProjectMembers(projectId);
     setMembers(projectMembers);
-    setInvites(projectInvites);
     setMemberDrafts((current) => {
       const next = { ...current };
       projectMembers.forEach((member) => {
@@ -141,6 +136,7 @@ export function ManageUsersSection({
       });
       return next;
     });
+
     if (
       memberDialogTarget &&
       !projectMembers.some((member) => member.user_id === memberDialogTarget.user_id)
@@ -181,15 +177,16 @@ export function ManageUsersSection({
   }
 
   async function handleSaveMember(member: ProjectAccess) {
-    setSavingId(member.user_id);
+    setSavingId(`save:${member.user_id}`);
     setError(null);
     try {
-      const draft = memberDrafts[member.user_id] ?? permissionStateFromFields(member);
+      const draft =
+        memberDrafts[member.user_id] ?? permissionStateFromFields(member);
       await updateProjectAccess(projectId, member.user_id, {
         ...draft,
         email: member.email,
       });
-      setMemberDialogMode("menu");
+      closeMemberDialog();
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update access.");
@@ -198,40 +195,34 @@ export function ManageUsersSection({
     }
   }
 
-  async function handleRemoveMember(member: ProjectAccess) {
+  async function handleRevokeAllAccess(member: ProjectAccess) {
     if (member.user_id === access?.user_id) {
       return;
     }
-    setSavingId(member.user_id);
+
+    const confirmed = window.confirm(
+      `Revoke all access for ${member.email ?? member.user_id}? They will immediately lose visibility to this project.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setSavingId(`revoke:${member.user_id}`);
     setError(null);
     try {
       await removeProjectAccess(projectId, member.user_id);
+      if (member.email) {
+        await revokeProjectInvitesForEmail(projectId, member.email);
+      }
       closeMemberDialog();
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to remove member.");
+      setError(
+        err instanceof Error ? err.message : "Failed to revoke member access.",
+      );
     } finally {
       setSavingId(null);
     }
-  }
-
-  async function handleRevokeInvite(token: string) {
-    setSavingId(token);
-    setError(null);
-    try {
-      await revokeProjectInvite(token);
-      await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to revoke invite.");
-    } finally {
-      setSavingId(null);
-    }
-  }
-
-  async function handleCopyInviteLink(token: string) {
-    const url = buildProjectInviteUrl(window.location.origin, token);
-    await navigator.clipboard.writeText(url);
-    setInviteUrl(url);
   }
 
   return (
@@ -246,6 +237,7 @@ export function ManageUsersSection({
             </p>
           </div>
         </CardHeader>
+
         <CardBody className="space-y-6">
           {inviteUrl && (
             <div className="rounded-2xl border border-brand-500/30 bg-surface p-4 text-sm text-ink-700">
@@ -254,7 +246,10 @@ export function ManageUsersSection({
             </div>
           )}
 
-          <form onSubmit={handleInvite} className="space-y-4 rounded-2xl border border-ink-200 bg-surface p-4">
+          <form
+            onSubmit={handleInvite}
+            className="space-y-4 rounded-2xl border border-ink-200 bg-surface p-4"
+          >
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Invite email" htmlFor="invite-email" required>
                 <Input
@@ -292,11 +287,9 @@ export function ManageUsersSection({
           </form>
 
           <div className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-semibold text-ink-900">Members</h3>
-                <p className="text-xs text-ink-500">Active project access.</p>
-              </div>
+            <div>
+              <h3 className="text-sm font-semibold text-ink-900">Members</h3>
+              <p className="text-xs text-ink-500">Active project access.</p>
             </div>
 
             {memberRows.length === 0 ? (
@@ -328,71 +321,10 @@ export function ManageUsersSection({
                             size="sm"
                             onClick={() => openMemberDialog(member)}
                           >
-                            Revoke
+                            Edit access
                           </Button>
                         )}
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-3">
-            <div>
-              <h3 className="text-sm font-semibold text-ink-900">Invites</h3>
-              <p className="text-xs text-ink-500">Share the link or send it from your email client.</p>
-            </div>
-
-            {invites.length === 0 ? (
-              <p className="rounded-2xl border border-ink-200 bg-ink-50 px-4 py-3 text-sm text-ink-600">
-                No invites created yet.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {invites.map((invite) => {
-                  const url = buildProjectInviteUrl(window.location.origin, invite.token);
-                  const canRevoke = invite.status === "Pending";
-                  return (
-                    <div
-                      key={invite.id}
-                      className="rounded-2xl border border-ink-200 bg-surface p-4"
-                      aria-label={`Invite ${invite.invited_email}`}
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <p className="font-medium text-ink-900">{invite.invited_email}</p>
-                          <p className="text-xs text-ink-500">
-                            {invite.status} · {projectPermissionsSummary(invite)}
-                          </p>
-                          <p className="mt-1 text-xs text-ink-500">
-                            Invited by {invite.invited_by_email ?? "Unknown"}
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleCopyInviteLink(invite.token)}
-                          >
-                            Copy link
-                          </Button>
-                          {canRevoke && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleRevokeInvite(invite.token)}
-                              loading={savingId === invite.token}
-                            >
-                              Revoke
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                      <p className="mt-2 break-all text-xs text-ink-500">{url}</p>
                     </div>
                   );
                 })}
@@ -413,7 +345,7 @@ export function ManageUsersSection({
             <CardHeader className="flex items-center justify-between gap-3">
               <div>
                 <CardTitle id="manage-member-dialog-title">
-                  Manage {activeMember.email ?? activeMember.user_id}
+                  Edit access for {activeMember.email ?? activeMember.user_id}
                 </CardTitle>
                 <p className="mt-1 text-xs text-ink-500">
                   Current access: {projectPermissionsSummary(activeMember)}
@@ -425,98 +357,39 @@ export function ManageUsersSection({
             </CardHeader>
 
             <CardBody className="max-h-[70vh] space-y-4 overflow-y-auto">
-              {memberDialogMode === "menu" && (
-                <div className="space-y-4">
-                  <p className="text-sm text-ink-600">
-                    Choose whether you want to edit this member&apos;s access live
-                    or remove them from this project completely.
-                  </p>
-                  <div className="flex flex-wrap gap-3">
-                    <Button type="button" onClick={() => setMemberDialogMode("edit")}>
-                      Edit access live
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="danger"
-                      onClick={() => setMemberDialogMode("remove")}
-                    >
-                      Remove from project completely
-                    </Button>
-                    <Button type="button" variant="outline" onClick={closeMemberDialog}>
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <PermissionChecklist
+                value={activeMemberDraft}
+                onChange={(next) =>
+                  setMemberDrafts((current) => ({
+                    ...current,
+                    [activeMember.user_id]: next,
+                  }))
+                }
+                title="Edit permissions"
+                description="Change exactly what this person can see or edit."
+                defaultOpen
+              />
 
-              {memberDialogMode === "edit" && (
-                <div className="space-y-4">
-                  <PermissionChecklist
-                    value={activeMemberDraft}
-                    onChange={(next) =>
-                      setMemberDrafts((current) => ({
-                        ...current,
-                        [activeMember.user_id]: next,
-                      }))
-                    }
-                    title="Edit permissions"
-                    description="Change exactly what this person can see or edit."
-                    defaultOpen
-                  />
-                  <div className="flex flex-wrap gap-3">
-                    <Button
-                      type="button"
-                      loading={savingId === activeMember.user_id}
-                      onClick={() => handleSaveMember(activeMember)}
-                    >
-                      Save access
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setMemberDialogMode("menu")}
-                    >
-                      Back
-                    </Button>
-                    <Button type="button" variant="ghost" onClick={closeMemberDialog}>
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {memberDialogMode === "remove" && (
-                <div className="space-y-4">
-                  <p className="text-sm text-ink-700">
-                    Remove <span className="font-medium text-ink-900">{activeMember.email ?? activeMember.user_id}</span>
-                    {" "}
-                    from this project?
-                  </p>
-                  <p className="text-xs text-ink-500">
-                    They will immediately lose project visibility and access.
-                  </p>
-                  <div className="flex flex-wrap gap-3">
-                    <Button
-                      type="button"
-                      variant="danger"
-                      loading={savingId === activeMember.user_id}
-                      onClick={() => handleRemoveMember(activeMember)}
-                    >
-                      Remove from project
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setMemberDialogMode("menu")}
-                    >
-                      Back
-                    </Button>
-                    <Button type="button" variant="ghost" onClick={closeMemberDialog}>
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  type="button"
+                  loading={savingId === `save:${activeMember.user_id}`}
+                  onClick={() => handleSaveMember(activeMember)}
+                >
+                  Save access
+                </Button>
+                <Button
+                  type="button"
+                  variant="danger"
+                  loading={savingId === `revoke:${activeMember.user_id}`}
+                  onClick={() => handleRevokeAllAccess(activeMember)}
+                >
+                  Revoke all access
+                </Button>
+                <Button type="button" variant="ghost" onClick={closeMemberDialog}>
+                  Cancel
+                </Button>
+              </div>
             </CardBody>
           </Card>
         </div>
@@ -589,8 +462,12 @@ function PermissionChecklist({
                   }
                 />
                 <span>
-                  <span className="block text-sm font-medium text-ink-900">{option.label}</span>
-                  <span className="block text-xs text-ink-500">{option.description}</span>
+                  <span className="block text-sm font-medium text-ink-900">
+                    {option.label}
+                  </span>
+                  <span className="block text-xs text-ink-500">
+                    {option.description}
+                  </span>
                 </span>
               </label>
             ))}

@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { signOut } from "firebase/auth";
 import { useAuth } from "@/components/providers/AuthProvider";
 import {
   acceptProjectInvite,
   getProjectInviteByToken,
   rejectProjectInvite,
 } from "@/lib/api";
+import { getFirebaseAuth } from "@/lib/firebase/client";
 import {
   buildProjectInvitePath,
   projectPermissionsSummary,
@@ -29,6 +31,7 @@ export function ProjectInviteClient({ token }: ProjectInviteClientProps) {
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
   const [rejecting, setRejecting] = useState(false);
+  const [switchingAccount, setSwitchingAccount] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -169,6 +172,20 @@ export function ProjectInviteClient({ token }: ProjectInviteClientProps) {
     }
   }
 
+  async function handleSwitchAccount() {
+    setSwitchingAccount(true);
+    setError(null);
+    try {
+      await signOut(getFirebaseAuth());
+      router.push(loginHref);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to switch accounts.");
+    } finally {
+      setSwitchingAccount(false);
+    }
+  }
+
   const loginHref = `/login?redirectTo=${encodeURIComponent(`/invite/${token}`)}`;
   const emailMatches =
     firebaseUser?.email &&
@@ -214,16 +231,20 @@ export function ProjectInviteClient({ token }: ProjectInviteClientProps) {
             </Link>
           </div>
         ) : !emailMatches ? (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-ink-700">
-            <p className="font-medium text-ink-900">Wrong account</p>
+          <div className="rounded-2xl border border-amber-300 bg-amber-100 p-4 text-sm text-amber-950">
+            <p className="font-semibold text-amber-950">Wrong account</p>
             <p>
               You are signed in as {firebaseUser.email}. This invite was sent to
               {" "}
               {invite.invited_email}.
             </p>
-            <Link href={loginHref}>
-              <Button variant="outline">Switch account</Button>
-            </Link>
+            <Button
+              variant="outline"
+              onClick={handleSwitchAccount}
+              loading={switchingAccount}
+            >
+              Switch account
+            </Button>
           </div>
         ) : (
           <div className="flex flex-wrap gap-3">
