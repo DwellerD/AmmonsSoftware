@@ -956,7 +956,6 @@ async function applyAutomaticNeedsInspection(
 export async function listTradePhases(
   filters: PhaseFilters = {},
 ): Promise<TradePhaseWithRelations[]> {
-  const db = getDb();
   const visibleProjectIds = filters.projectId
     ? new Set([filters.projectId])
     : await getProjectIdsWithSectionAccess("can_view_trade_phases");
@@ -965,15 +964,13 @@ export async function listTradePhases(
     [
       loadDocsByVisibleProjects(COLLECTIONS.tradePhases, visibleProjectIds),
       loadDocsByVisibleProjects(COLLECTIONS.trades, visibleProjectIds),
-      getDocs(collection(db, COLLECTIONS.contractors)),
+      listContractors(),
       loadDocsByVisibleProjects(COLLECTIONS.projects, visibleProjectIds),
     ],
   );
 
   const trades = new Map(tradeSnap.map((s) => [s.id, mapTrade(s)]));
-  const contractors = new Map(
-    contractorSnap.docs.map((s) => [s.id, mapContractor(s)]),
-  );
+  const contractors = new Map(contractorSnap.map((contractor) => [contractor.id, contractor]));
   const projects = new Map(projectSnap.map((s) => [s.id, mapProject(s)]));
 
   const today = todayIso();
