@@ -62,11 +62,21 @@ export default function DashboardPage() {
         if (docsRes.status === "fulfilled") setDocuments(docsRes.value);
 
         const failures: string[] = [];
-        if (phRes.status === "rejected") failures.push("trade phases");
-        if (actRes.status === "rejected") failures.push("activity");
-        if (matsRes.status === "rejected") failures.push("materials");
-        if (punRes.status === "rejected") failures.push("punch items");
-        if (docsRes.status === "rejected") failures.push("documents");
+        if (phRes.status === "rejected") {
+          failures.push(`trade phases: ${String(phRes.reason)}`);
+        }
+        if (actRes.status === "rejected") {
+          failures.push(`activity: ${String(actRes.reason)}`);
+        }
+        if (matsRes.status === "rejected") {
+          failures.push(`materials: ${String(matsRes.reason)}`);
+        }
+        if (punRes.status === "rejected") {
+          failures.push(`punch items: ${String(punRes.reason)}`);
+        }
+        if (docsRes.status === "rejected") {
+          failures.push(`documents: ${String(docsRes.reason)}`);
+        }
 
         if (failures.length > 0) {
           throw new Error(
