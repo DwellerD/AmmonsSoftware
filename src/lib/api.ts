@@ -135,6 +135,24 @@ function projectPermissionState(data: Record<string, unknown>): ProjectPermissio
   });
 }
 
+function formatError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
+function isPermissionDeniedError(err: unknown): boolean {
+  const code =
+    typeof err === "object" && err !== null && "code" in err
+      ? (err as { code?: unknown }).code
+      : undefined;
+  if (code === "permission-denied") return true;
+  const message = formatError(err).toLowerCase();
+  return (
+    message.includes("permission-denied") ||
+    message.includes("missing or insufficient permissions")
+  );
+}
+
 function mapProjectAccess(s: Snap): ProjectAccess {
   const d = s.data();
   return {
@@ -1030,30 +1048,46 @@ export async function getTradePhase(
   id: string,
 ): Promise<TradePhaseWithRelations | null> {
   const db = getDb();
-  const snap = await getDoc(doc(db, COLLECTIONS.tradePhases, id));
+  const snap = await getDoc(doc(db, COLLECTIONS.tradePhases, id)).catch((err) => {
+    throw new Error(`Trade phase read failed (${id}): ${formatError(err)}`);
+  });
   if (!snap.exists()) return null;
   const basePhase = mapPhase(snap as Snap);
-  const access = await getCurrentUserProjectAccess(basePhase.project_id);
+  const access = await getCurrentUserProjectAccess(basePhase.project_id).catch((err) => {
+    throw new Error(
+      `Project access check failed (${basePhase.project_id}): ${formatError(err)}`,
+    );
+  });
   if (!access || !access.can_view_trade_phases) return null;
   const phase = await applyAutomaticNeedsInspection(basePhase, todayIso());
 
-  async function readRelatedDoc<T>(promise: Promise<T | null>): Promise<T | null> {
-    try {
-      return await promise;
-    } catch (err) {
-      if (String(err).includes("permission-denied")) return null;
-      throw err;
-    }
+  const [tradeRes, contractorRes, projectRes] = await Promise.allSettled([
+    getDoc(doc(db, COLLECTIONS.trades, phase.trade_id)),
+    phase.contractor_id
+      ? getDoc(doc(db, COLLECTIONS.contractors, phase.contractor_id))
+      : Promise.resolve(null),
+    getDoc(doc(db, COLLECTIONS.projects, phase.project_id)),
+  ]);
+
+  if (tradeRes.status === "rejected") {
+    throw new Error(`Trade read failed (${phase.trade_id}): ${formatError(tradeRes.reason)}`);
+  }
+  if (projectRes.status === "rejected") {
+    throw new Error(`Project read failed (${phase.project_id}): ${formatError(projectRes.reason)}`);
+  }
+  if (
+    contractorRes.status === "rejected" &&
+    !isPermissionDeniedError(contractorRes.reason)
+  ) {
+    throw new Error(
+      `Contractor read failed (${phase.contractor_id ?? "none"}): ${formatError(contractorRes.reason)}`,
+    );
   }
 
-  // Fetch only the related docs this phase references.
-  const [tradeDoc, contractorDoc, projectDoc] = await Promise.all([
-    readRelatedDoc(getDoc(doc(db, COLLECTIONS.trades, phase.trade_id))),
-    phase.contractor_id
-      ? readRelatedDoc(getDoc(doc(db, COLLECTIONS.contractors, phase.contractor_id)))
-      : Promise.resolve(null),
-    readRelatedDoc(getDoc(doc(db, COLLECTIONS.projects, phase.project_id))),
-  ]);
+  const tradeDoc = tradeRes.value;
+  const contractorDoc =
+    contractorRes.status === "fulfilled" ? contractorRes.value : null;
+  const projectDoc = projectRes.value;
 
   return {
     ...phase,
@@ -1382,9 +1416,15 @@ export async function updateMaterialOrder(
   input: UpdateMaterialOrderInput,
 ): Promise<MaterialOrder> {
   const ref = doc(getDb(), COLLECTIONS.materialOrders, id);
-  const before = await getMaterialOrder(id);
+  const before = await getMaterialOrder(id).catch((err) => {
+    throw new Error(`Material read failed (${id}): ${formatError(err)}`);
+  });
   if (!before) throw new Error("Material order not found.");
-  await requireProjectPermission(before.project_id, "can_edit_material_orders");
+  await requireProjectPermission(before.project_id, "can_edit_material_orders").catch((err) => {
+    throw new Error(
+      `Material edit check failed (${before.project_id}): ${formatError(err)}`,
+    );
+  });
   await updateDoc(ref, {
     name: input.name,
     supplier: input.supplier || null,
@@ -1395,8 +1435,13 @@ export async function updateMaterialOrder(
     actual_arrival_date: input.actual_arrival_date || null,
     notes: input.notes || null,
     updated_at: serverTimestamp(),
+  }).catch((err) => {
+    throw new Error(`Material update failed (${before.project_id}): ${formatError(err)}`);
   });
-  const order = mapMaterialOrder((await getDoc(ref)) as Snap);
+  const orderSnap = await getDoc(ref).catch((err) => {
+    throw new Error(`Material reload failed (${id}): ${formatError(err)}`);
+  });
+  const order = mapMaterialOrder(orderSnap as Snap);
   if (before?.status !== input.status) {
     await logActivity({
       action_type: "material_order_status_updated",
