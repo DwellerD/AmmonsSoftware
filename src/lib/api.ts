@@ -296,6 +296,28 @@ function normalizeInvitePermissions(
   });
 }
 
+function chunkProjectIds(projectIds: Set<string>): string[][] {
+  const ids = [...projectIds];
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += 10) {
+    chunks.push(ids.slice(i, i + 10));
+  }
+  return chunks;
+}
+
+async function loadDocsByVisibleProjects(
+  collectionName: string,
+  projectIds: Set<string>,
+): Promise<Snap[]> {
+  if (projectIds.size === 0) return [];
+  const snaps = await Promise.all(
+    chunkProjectIds(projectIds).map((ids) =>
+      getDocs(query(collection(getDb(), collectionName), where("project_id", "in", ids))),
+    ),
+  );
+  return snaps.flatMap((snap) => snap.docs as Snap[]);
+}
+
 /** Current signed-in user's id, used to stamp created_by / user_id. */
 function uid(): string | null {
   return getFirebaseAuth().currentUser?.uid ?? null;
@@ -760,20 +782,18 @@ export interface TradeWithContractor extends Trade {
 export async function listTrades(
   projectId?: string,
 ): Promise<TradeWithContractor[]> {
-  const db = getDb();
-  const visibleProjectIds = await getProjectIdsWithSectionAccess("can_view_trades");
+  const visibleProjectIds = projectId
+    ? new Set([projectId])
+    : await getProjectIdsWithSectionAccess("can_view_trades");
   // Load trades and contractors, then join in memory.
   const [tradeSnap, contractors] = await Promise.all([
-    getDocs(collection(db, COLLECTIONS.trades)),
+    loadDocsByVisibleProjects(COLLECTIONS.trades, visibleProjectIds),
     listContractors(),
   ]);
   const contractorById = new Map(contractors.map((c) => [c.id, c]));
-
-  let trades = tradeSnap.docs
+  const trades = tradeSnap
     .map(mapTrade)
     .sort((a, b) => a.name.localeCompare(b.name));
-  trades = trades.filter((trade) => visibleProjectIds.has(trade.project_id));
-  if (projectId) trades = trades.filter((t) => t.project_id === projectId);
 
   return trades.map((t) => ({
     ...t,
@@ -937,26 +957,28 @@ export async function listTradePhases(
   filters: PhaseFilters = {},
 ): Promise<TradePhaseWithRelations[]> {
   const db = getDb();
-  const visibleProjectIds = await getProjectIdsWithSectionAccess("can_view_trade_phases");
+  const visibleProjectIds = filters.projectId
+    ? new Set([filters.projectId])
+    : await getProjectIdsWithSectionAccess("can_view_trade_phases");
   // Load phases plus the collections we need to resolve names, then join.
   const [phaseSnap, tradeSnap, contractorSnap, projectSnap] = await Promise.all(
     [
-      getDocs(collection(db, COLLECTIONS.tradePhases)),
-      getDocs(collection(db, COLLECTIONS.trades)),
+      loadDocsByVisibleProjects(COLLECTIONS.tradePhases, visibleProjectIds),
+      loadDocsByVisibleProjects(COLLECTIONS.trades, visibleProjectIds),
       getDocs(collection(db, COLLECTIONS.contractors)),
-      getDocs(collection(db, COLLECTIONS.projects)),
+      loadDocsByVisibleProjects(COLLECTIONS.projects, visibleProjectIds),
     ],
   );
 
-  const trades = new Map(tradeSnap.docs.map((s) => [s.id, mapTrade(s)]));
+  const trades = new Map(tradeSnap.map((s) => [s.id, mapTrade(s)]));
   const contractors = new Map(
     contractorSnap.docs.map((s) => [s.id, mapContractor(s)]),
   );
-  const projects = new Map(projectSnap.docs.map((s) => [s.id, mapProject(s)]));
+  const projects = new Map(projectSnap.map((s) => [s.id, mapProject(s)]));
 
   const today = todayIso();
   const normalizedPhases = await Promise.all(
-    phaseSnap.docs
+    phaseSnap
       .map((s) => mapPhase(s))
       .filter((phase) => visibleProjectIds.has(phase.project_id))
       .map((phase) => applyAutomaticNeedsInspection(phase, today)),
@@ -1112,8 +1134,8 @@ export async function extendTradePhaseEndDate(
 
 export async function listRecentActivity(limit = 10): Promise<ActivityLog[]> {
   const visibleProjectIds = await getProjectIdsWithSectionAccess("can_view_activity");
-  const snap = await getDocs(collection(getDb(), COLLECTIONS.activityLogs));
-  return snap.docs
+  const snap = await loadDocsByVisibleProjects(COLLECTIONS.activityLogs, visibleProjectIds);
+  return snap
     .map(mapActivity)
     .filter((activity) => activity.project_id && visibleProjectIds.has(activity.project_id))
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
@@ -1239,9 +1261,11 @@ export interface MaterialOrderFilters {
 export async function listMaterialOrders(
   filters: MaterialOrderFilters = {},
 ): Promise<MaterialOrder[]> {
-  const visibleProjectIds = await getProjectIdsWithSectionAccess("can_view_material_orders");
-  const snap = await getDocs(collection(getDb(), COLLECTIONS.materialOrders));
-  let orders = snap.docs
+  const visibleProjectIds = filters.projectId
+    ? new Set([filters.projectId])
+    : await getProjectIdsWithSectionAccess("can_view_material_orders");
+  const snap = await loadDocsByVisibleProjects(COLLECTIONS.materialOrders, visibleProjectIds);
+  let orders = snap
     .map(mapMaterialOrder)
     .filter((order) => visibleProjectIds.has(order.project_id))
     .sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
@@ -1627,9 +1651,11 @@ export interface PunchItemFilters {
 export async function listAllPunchItems(
   filters: PunchItemFilters = {},
 ): Promise<PunchItem[]> {
-  const visibleProjectIds = await getProjectIdsWithSectionAccess("can_view_punch_items");
-  const snap = await getDocs(collection(getDb(), COLLECTIONS.punchItems));
-  let items = snap.docs
+  const visibleProjectIds = filters.projectId
+    ? new Set([filters.projectId])
+    : await getProjectIdsWithSectionAccess("can_view_punch_items");
+  const snap = await loadDocsByVisibleProjects(COLLECTIONS.punchItems, visibleProjectIds);
+  let items = snap
     .map(mapPunchItem)
     .filter((item) => visibleProjectIds.has(item.project_id))
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
@@ -1897,9 +1923,11 @@ export interface DocumentFilters {
 export async function listDocuments(
   filters: DocumentFilters = {},
 ): Promise<ProjectDocument[]> {
-  const visibleProjectIds = await getProjectIdsWithSectionAccess("can_view_documents");
-  const snap = await getDocs(collection(getDb(), COLLECTIONS.documents));
-  let docs = snap.docs
+  const visibleProjectIds = filters.projectId
+    ? new Set([filters.projectId])
+    : await getProjectIdsWithSectionAccess("can_view_documents");
+  const snap = await loadDocsByVisibleProjects(COLLECTIONS.documents, visibleProjectIds);
+  let docs = snap
     .map(mapDocument)
     .filter((doc) => visibleProjectIds.has(doc.project_id))
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
