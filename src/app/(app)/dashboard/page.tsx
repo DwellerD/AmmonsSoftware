@@ -46,18 +46,33 @@ export default function DashboardPage() {
       setLoading(true);
       setError(null);
       try {
-        const [ph, act, mats, pun, docs] = await Promise.all([
+        const results = await Promise.allSettled([
           listTradePhases(),
           listRecentActivity(8),
           listMaterialOrders(),
           listAllPunchItems(),
           listDocuments(),
         ]);
-        setPhases(ph);
-        setActivity(act);
-        setMaterials(mats);
-        setPunch(pun);
-        setDocuments(docs);
+
+        const [phRes, actRes, matsRes, punRes, docsRes] = results;
+        if (phRes.status === "fulfilled") setPhases(phRes.value);
+        if (actRes.status === "fulfilled") setActivity(actRes.value);
+        if (matsRes.status === "fulfilled") setMaterials(matsRes.value);
+        if (punRes.status === "fulfilled") setPunch(punRes.value);
+        if (docsRes.status === "fulfilled") setDocuments(docsRes.value);
+
+        const failures: string[] = [];
+        if (phRes.status === "rejected") failures.push("trade phases");
+        if (actRes.status === "rejected") failures.push("activity");
+        if (matsRes.status === "rejected") failures.push("materials");
+        if (punRes.status === "rejected") failures.push("punch items");
+        if (docsRes.status === "rejected") failures.push("documents");
+
+        if (failures.length > 0) {
+          throw new Error(
+            `Dashboard failed in: ${failures.join(", ")}`,
+          );
+        }
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Failed to load dashboard.",
