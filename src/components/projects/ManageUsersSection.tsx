@@ -219,13 +219,13 @@ export function ManageUsersSection({
       </CardHeader>
       <CardBody className="space-y-6">
         {inviteUrl && (
-          <div className="rounded-2xl border border-brand-200 bg-brand-50 p-4 text-sm text-ink-700">
+          <div className="rounded-2xl border border-brand-500/30 bg-surface p-4 text-sm text-ink-700">
             <p className="font-medium text-ink-900">Invite link ready</p>
             <p className="mt-1 break-all text-xs text-ink-600">{inviteUrl}</p>
           </div>
         )}
 
-        <form onSubmit={handleInvite} className="space-y-4 rounded-2xl border border-ink-200 bg-white p-4">
+        <form onSubmit={handleInvite} className="space-y-4 rounded-2xl border border-ink-200 bg-surface p-4">
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Invite email" htmlFor="invite-email" required>
               <Input
@@ -252,6 +252,7 @@ export function ManageUsersSection({
             onChange={setInvitePermissions}
             title="Invite permissions"
             description="Pick exactly what this person can view or edit."
+            defaultOpen={false}
           />
 
           <div className="flex flex-wrap gap-3">
@@ -274,7 +275,7 @@ export function ManageUsersSection({
               const isOwner = member.user_id === access?.user_id;
               const isEditing = editingMemberId === member.user_id;
               return (
-                <div key={member.id} className="rounded-2xl border border-ink-200 bg-white p-4">
+                <div key={member.id} className="rounded-2xl border border-ink-200 bg-surface p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="font-medium text-ink-900">
@@ -320,6 +321,7 @@ export function ManageUsersSection({
                         }
                         title="Edit permissions"
                         description="Change exactly what this person can see or edit."
+                        defaultOpen
                       />
                       <div className="mt-4 flex flex-wrap gap-3">
                         <Button
@@ -355,7 +357,7 @@ export function ManageUsersSection({
             {invites.map((invite) => {
               const url = buildProjectInviteUrl(window.location.origin, invite.token);
               return (
-                <div key={invite.id} className="rounded-2xl border border-ink-200 bg-white p-4">
+                <div key={invite.id} className="rounded-2xl border border-ink-200 bg-surface p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="font-medium text-ink-900">{invite.invited_email}</p>
@@ -399,6 +401,7 @@ interface PermissionChecklistProps {
   description: string;
   value: ProjectPermissionState;
   onChange: (next: ProjectPermissionState) => void;
+  defaultOpen?: boolean;
 }
 
 function PermissionChecklist({
@@ -406,39 +409,65 @@ function PermissionChecklist({
   description,
   value,
   onChange,
+  defaultOpen = false,
 }: PermissionChecklistProps) {
+  const [open, setOpen] = useState(defaultOpen);
+  const selectedCount = PROJECT_PERMISSION_OPTIONS.filter(
+    (option) => value[option.field],
+  ).length;
+
   return (
-    <div className="space-y-3">
-      <div>
-        <h4 className="text-sm font-semibold text-ink-900">{title}</h4>
-        <p className="text-xs text-ink-500">{description}</p>
-      </div>
-      <div className="grid gap-3 md:grid-cols-2">
-        {PROJECT_PERMISSION_OPTIONS.map((option) => (
-          <label
-            key={option.field}
-            className="flex items-start gap-3 rounded-2xl border border-ink-200 bg-ink-50 p-3"
-          >
-            <input
-              type="checkbox"
-              className="mt-1 h-4 w-4 rounded border-ink-300 text-brand-600"
-              checked={value[option.field]}
-              onChange={(e) =>
-                onChange(
-                  permissionStateFromFields({
-                    ...value,
-                    [option.field]: e.target.checked,
-                  }),
-                )
-              }
-            />
-            <span>
-              <span className="block text-sm font-medium text-ink-900">{option.label}</span>
-              <span className="block text-xs text-ink-500">{option.description}</span>
-            </span>
-          </label>
-        ))}
-      </div>
+    <div className="rounded-2xl border border-ink-200 bg-ink-50/60">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+        aria-expanded={open}
+      >
+        <div>
+          <h4 className="text-sm font-semibold text-ink-900">{title}</h4>
+          <p className="text-xs text-ink-500">{description}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="rounded-full border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-600">
+            {selectedCount} selected
+          </span>
+          <span className="text-xs font-medium text-ink-600">
+            {open ? "Hide" : "Show"}
+          </span>
+        </div>
+      </button>
+
+      {open && (
+        <div className="border-t border-ink-200 px-4 pb-4 pt-3">
+          <div className="grid gap-3 md:grid-cols-2">
+            {PROJECT_PERMISSION_OPTIONS.map((option) => (
+              <label
+                key={option.field}
+                className="flex items-start gap-3 rounded-2xl border border-ink-200 bg-surface p-3"
+              >
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 rounded border-ink-300 text-brand-600"
+                  checked={value[option.field]}
+                  onChange={(e) =>
+                    onChange(
+                      permissionStateFromFields({
+                        ...value,
+                        [option.field]: e.target.checked,
+                      }),
+                    )
+                  }
+                />
+                <span>
+                  <span className="block text-sm font-medium text-ink-900">{option.label}</span>
+                  <span className="block text-xs text-ink-500">{option.description}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
