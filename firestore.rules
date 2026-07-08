@@ -154,7 +154,7 @@ service cloud.firestore {
 
     match /projectInvites/{token} {
       allow get: if true;
-      allow list: if false;
+      allow list: if signedIn() && canManageMembers(resource.data.project_id);
       allow create: if signedIn() && canManageMembers(request.resource.data.project_id);
       allow update: if signedIn() && (
         canManageMembers(resource.data.project_id) ||
@@ -189,7 +189,10 @@ service cloud.firestore {
 
     // Core workflow data is owner-scoped.
     match /projects/{projectId} {
-      allow read: if canViewProject(projectId);
+      allow read: if signedIn() && (
+        resource.data.created_by == request.auth.uid ||
+        canViewProject(projectId)
+      );
       allow update, delete: if projectOwner(projectId);
       allow create: if createsOwned('created_by');
     }
