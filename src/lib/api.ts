@@ -224,28 +224,25 @@ async function requireProjectPermission(
 async function getCurrentUserProjectAccessMap(): Promise<Map<string, ProjectAccess>> {
   const userId = requireUid();
   const db = getDb();
-  const [ownedRes, accessRes] = await Promise.allSettled([
-    getDocs(
-      query(
-        collection(db, COLLECTIONS.projects),
-        where("created_by", "==", userId),
-      ),
+  const ownedRes = await getDocs(
+    query(
+      collection(db, COLLECTIONS.projects),
+      where("created_by", "==", userId),
     ),
-    getDocs(
-      query(collection(db, COLLECTIONS.projectAccess), where("user_id", "==", userId)),
-    ),
-  ]);
-
-  if (ownedRes.status === "rejected") {
-    throw new Error(`Owned projects query failed: ${ownedRes.reason}`);
-  }
-  if (accessRes.status === "rejected") {
-    throw new Error(`Project access query failed: ${accessRes.reason}`);
-  }
+  ).catch((err) => {
+    console.warn("Owned projects query failed; continuing without it.", err);
+    return null;
+  });
+  const accessRes = await getDocs(
+    query(collection(db, COLLECTIONS.projectAccess), where("user_id", "==", userId)),
+  ).catch((err) => {
+    console.warn("Project access query failed; continuing without it.", err);
+    return null;
+  });
 
   const accessMap = new Map<string, ProjectAccess>();
 
-  ownedRes.value.docs.forEach((snap) => {
+  ownedRes?.docs.forEach((snap) => {
     const projectId = snap.id;
     accessMap.set(projectId, {
       id: accessDocId(projectId, userId),
@@ -260,7 +257,7 @@ async function getCurrentUserProjectAccessMap(): Promise<Map<string, ProjectAcce
     });
   });
 
-  accessRes.value.docs.forEach((snap) => {
+  accessRes?.docs.forEach((snap) => {
     const access = mapProjectAccess(snap as Snap);
     accessMap.set(access.project_id, access);
   });
