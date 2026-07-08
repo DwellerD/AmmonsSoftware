@@ -966,14 +966,27 @@ export async function listTradePhases(
     ? new Set([filters.projectId])
     : await getProjectIdsWithSectionAccess("can_view_trade_phases");
   // Load phases plus the collections we need to resolve names, then join.
-  const [phaseSnap, tradeSnap, contractorSnap, projectSnap] = await Promise.all(
-    [
-      loadDocsByVisibleProjects(COLLECTIONS.tradePhases, visibleProjectIds),
-      loadDocsByVisibleProjects(COLLECTIONS.trades, visibleProjectIds),
-      listContractors(),
-      loadDocsByVisibleProjects(COLLECTIONS.projects, visibleProjectIds),
-    ],
-  );
+  const [phaseRes, tradeRes, contractorRes, projectRes] = await Promise.allSettled([
+    loadDocsByVisibleProjects(COLLECTIONS.tradePhases, visibleProjectIds),
+    loadDocsByVisibleProjects(COLLECTIONS.trades, visibleProjectIds),
+    listContractors(),
+    loadDocsByVisibleProjects(COLLECTIONS.projects, visibleProjectIds),
+  ]);
+
+  const failures: string[] = [];
+  if (phaseRes.status === "rejected") failures.push(`phase docs: ${String(phaseRes.reason)}`);
+  if (tradeRes.status === "rejected") failures.push(`trade docs: ${String(tradeRes.reason)}`);
+  if (contractorRes.status === "rejected") failures.push(`contractors: ${String(contractorRes.reason)}`);
+  if (projectRes.status === "rejected") failures.push(`project docs: ${String(projectRes.reason)}`);
+  if (failures.length > 0) {
+    throw new Error(`Trade phase load failed: ${failures.join(" | ")}`);
+  }
+
+  const phaseSnap = phaseRes.status === "fulfilled" ? phaseRes.value : [];
+  const tradeSnap = tradeRes.status === "fulfilled" ? tradeRes.value : [];
+  const contractorSnap =
+    contractorRes.status === "fulfilled" ? contractorRes.value : [];
+  const projectSnap = projectRes.status === "fulfilled" ? projectRes.value : [];
 
   const trades = new Map(tradeSnap.map((s) => [s.id, mapTrade(s)]));
   const contractors = new Map(contractorSnap.map((contractor) => [contractor.id, contractor]));
