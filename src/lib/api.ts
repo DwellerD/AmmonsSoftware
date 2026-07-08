@@ -1223,16 +1223,13 @@ function mapPunchItem(s: Snap): PunchItem {
   };
 }
 
-/** Loads all docs in a collection for one trade phase, oldest first. */
-async function listForPhase(
+/** Loads all docs in a collection for one project, oldest first. */
+async function listForProject(
   collectionName: string,
-  tradePhaseId: string,
+  projectId: string,
 ): Promise<Snap[]> {
   const snap = await getDocs(
-    query(
-      collection(getDb(), collectionName),
-      where("trade_phase_id", "==", tradePhaseId),
-    ),
+    query(collection(getDb(), collectionName), where("project_id", "==", projectId)),
   );
   return [...snap.docs].sort((a, b) => {
     const at = a.data().created_at;
@@ -1435,8 +1432,10 @@ export async function listCompletionRecords(
 ): Promise<CompletionRecord[]> {
   const phase = await getTradePhase(tradePhaseId);
   if (!phase) return [];
-  const docs = await listForPhase(COLLECTIONS.completionRecords, tradePhaseId);
-  return docs.map(mapCompletion);
+  const docs = await listForProject(COLLECTIONS.completionRecords, phase.project_id);
+  return docs
+    .map(mapCompletion)
+    .filter((record) => record.trade_phase_id === tradePhaseId);
 }
 
 /**
@@ -1585,8 +1584,10 @@ export async function listInspections(
 ): Promise<Inspection[]> {
   const phase = await getTradePhase(tradePhaseId);
   if (!phase) return [];
-  const docs = await listForPhase(COLLECTIONS.inspections, tradePhaseId);
-  return docs.map(mapInspection);
+  const docs = await listForProject(COLLECTIONS.inspections, phase.project_id);
+  return docs
+    .map(mapInspection)
+    .filter((inspection) => inspection.trade_phase_id === tradePhaseId);
 }
 
 export interface NewInspectionInput {
@@ -1637,8 +1638,10 @@ export async function listPunchItems(
 ): Promise<PunchItem[]> {
   const phase = await getTradePhase(tradePhaseId);
   if (!phase) return [];
-  const docs = await listForPhase(COLLECTIONS.punchItems, tradePhaseId);
-  return docs.map(mapPunchItem);
+  const docs = await listForProject(COLLECTIONS.punchItems, phase.project_id);
+  return docs
+    .map(mapPunchItem)
+    .filter((item) => item.trade_phase_id === tradePhaseId);
 }
 
 export interface PunchItemFilters {
