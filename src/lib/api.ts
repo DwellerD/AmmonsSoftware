@@ -46,6 +46,8 @@ import type {
   NotificationStatus,
   NotificationType,
   Project,
+  ProjectAccess,
+  ProjectInvite,
   ProjectDocument,
   PunchItem,
   PunchItemStatus,
@@ -57,6 +59,13 @@ import type {
   TradePhaseWithRelations,
 } from "@/lib/database.types";
 import { todayIso } from "@/lib/format";
+import {
+  fullProjectPermissions,
+  hasProjectViewAccess,
+  permissionStateFromFields,
+  type ProjectPermissionField,
+  type ProjectPermissionState,
+} from "@/lib/projectSharing";
 
 /**
  * Client-side data access layer for PhaseBinder, backed by Cloud Firestore.
@@ -77,6 +86,8 @@ import { todayIso } from "@/lib/format";
 
 const COLLECTIONS = {
   projects: "projects",
+  projectAccess: "projectAccess",
+  projectInvites: "projectInvites",
   contractors: "contractors",
   trades: "trades",
   tradePhases: "tradePhases",
@@ -95,6 +106,195 @@ const COLLECTIONS = {
 // ---------------------------------------------------------------------------
 
 type Snap = QueryDocumentSnapshot<DocumentData>;
+
+function accessDocId(projectId: string, userId: string): string {
+  return `${projectId}_${userId}`;
+}
+
+function inviteDocId(token: string): string {
+  return token;
+}
+
+function projectPermissionState(data: Record<string, unknown>): ProjectPermissionState {
+  return permissionStateFromFields({
+    can_view_project: Boolean(data.can_view_project),
+    can_edit_project: Boolean(data.can_edit_project),
+    can_view_trades: Boolean(data.can_view_trades),
+    can_edit_trades: Boolean(data.can_edit_trades),
+    can_view_trade_phases: Boolean(data.can_view_trade_phases),
+    can_edit_trade_phases: Boolean(data.can_edit_trade_phases),
+    can_view_material_orders: Boolean(data.can_view_material_orders),
+    can_edit_material_orders: Boolean(data.can_edit_material_orders),
+    can_view_punch_items: Boolean(data.can_view_punch_items),
+    can_edit_punch_items: Boolean(data.can_edit_punch_items),
+    can_view_documents: Boolean(data.can_view_documents),
+    can_edit_documents: Boolean(data.can_edit_documents),
+    can_view_activity: Boolean(data.can_view_activity),
+    can_edit_activity: Boolean(data.can_edit_activity),
+    can_manage_members: Boolean(data.can_manage_members),
+  });
+}
+
+function mapProjectAccess(s: Snap): ProjectAccess {
+  const d = s.data();
+  return {
+    id: s.id,
+    project_id: d.project_id,
+    user_id: d.user_id,
+    email: d.email ?? null,
+    ...projectPermissionState(d),
+    invite_token: d.invite_token ?? null,
+    created_by: d.created_by ?? null,
+    created_at: toIso(d.created_at),
+    updated_at: toIso(d.updated_at),
+  };
+}
+
+function mapProjectInvite(s: Snap): ProjectInvite {
+  const d = s.data();
+  return {
+    id: s.id,
+    token: d.token ?? s.id,
+    project_id: d.project_id,
+    project_name: d.project_name,
+    invited_email: d.invited_email,
+    message: d.message ?? null,
+    ...projectPermissionState(d),
+    status: (d.status ?? "Pending") as ProjectInvite["status"],
+    invited_by: d.invited_by ?? null,
+    invited_by_email: d.invited_by_email ?? null,
+    accepted_by: d.accepted_by ?? null,
+    accepted_at: d.accepted_at ? toIso(d.accepted_at) : null,
+    expires_at: d.expires_at ? toIso(d.expires_at) : null,
+    created_at: toIso(d.created_at),
+    updated_at: toIso(d.updated_at),
+  };
+}
+
+async function getProjectOwnerId(projectId: string): Promise<string | null> {
+  const snap = await getDoc(doc(getDb(), COLLECTIONS.projects, projectId));
+  if (!snap.exists()) return null;
+  return (snap.data().created_by as string | null) ?? null;
+}
+
+async function getCurrentUserProjectAccess(
+  projectId: string,
+): Promise<ProjectAccess | null> {
+  const userId = uid();
+  if (!userId) return null;
+
+  const ref = doc(getDb(), COLLECTIONS.projectAccess, accessDocId(projectId, userId));
+  const snap = await getDoc(ref);
+  if (snap.exists()) return mapProjectAccess(snap as Snap);
+
+  if ((await getProjectOwnerId(projectId)) === userId) {
+    return {
+      id: accessDocId(projectId, userId),
+      project_id: projectId,
+      user_id: userId,
+      email: getFirebaseAuth().currentUser?.email ?? null,
+      ...fullProjectPermissions(),
+      invite_token: null,
+      created_by: userId,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  return null;
+}
+
+export async function getMyProjectAccess(
+  projectId: string,
+): Promise<ProjectAccess | null> {
+  return getCurrentUserProjectAccess(projectId);
+}
+
+async function requireProjectPermission(
+  projectId: string,
+  field: ProjectPermissionField,
+): Promise<ProjectAccess> {
+  const access = await getCurrentUserProjectAccess(projectId);
+  if (!access || !access[field]) {
+    throw new Error("You do not have permission to access this project.");
+  }
+  return access;
+}
+
+async function getCurrentUserProjectAccessMap(): Promise<Map<string, ProjectAccess>> {
+  const userId = requireUid();
+  const db = getDb();
+  const [ownedSnap, accessSnap] = await Promise.all([
+    getDocs(
+      query(
+        collection(db, COLLECTIONS.projects),
+        where("created_by", "==", userId),
+      ),
+    ),
+    getDocs(query(collection(db, COLLECTIONS.projectAccess), where("user_id", "==", userId))),
+  ]);
+
+  const accessMap = new Map<string, ProjectAccess>();
+
+  ownedSnap.docs.forEach((snap) => {
+    const projectId = snap.id;
+    accessMap.set(projectId, {
+      id: accessDocId(projectId, userId),
+      project_id: projectId,
+      user_id: userId,
+      email: getFirebaseAuth().currentUser?.email ?? null,
+      ...fullProjectPermissions(),
+      invite_token: null,
+      created_by: userId,
+      created_at: toIso(snap.data().created_at),
+      updated_at: toIso(snap.data().updated_at),
+    });
+  });
+
+  accessSnap.docs.forEach((snap) => {
+    const access = mapProjectAccess(snap as Snap);
+    accessMap.set(access.project_id, access);
+  });
+
+  return accessMap;
+}
+
+async function getProjectIdsWithSectionAccess(
+  field: ProjectPermissionField,
+): Promise<Set<string>> {
+  const accessMap = await getCurrentUserProjectAccessMap();
+  const ids = new Set<string>();
+  accessMap.forEach((access, projectId) => {
+    if (hasProjectViewAccess(access) && field === "can_view_project") {
+      ids.add(projectId);
+      return;
+    }
+    if (access[field]) ids.add(projectId);
+  });
+  return ids;
+}
+
+function normalizeInvitePermissions(
+  input: Partial<ProjectPermissionState>,
+): ProjectPermissionState {
+  return permissionStateFromFields({
+    can_view_project: input.can_view_project,
+    can_edit_project: input.can_edit_project,
+    can_view_trades: input.can_view_trades,
+    can_edit_trades: input.can_edit_trades,
+    can_view_trade_phases: input.can_view_trade_phases,
+    can_edit_trade_phases: input.can_edit_trade_phases,
+    can_view_material_orders: input.can_view_material_orders,
+    can_edit_material_orders: input.can_edit_material_orders,
+    can_view_punch_items: input.can_view_punch_items,
+    can_edit_punch_items: input.can_edit_punch_items,
+    can_view_documents: input.can_view_documents,
+    can_edit_documents: input.can_edit_documents,
+    can_view_activity: input.can_view_activity,
+    can_edit_activity: input.can_edit_activity,
+    can_manage_members: input.can_manage_members,
+  });
+}
 
 /** Current signed-in user's id, used to stamp created_by / user_id. */
 function uid(): string | null {
@@ -235,18 +435,25 @@ function mapActivity(s: Snap): ActivityLog {
 // ---------------------------------------------------------------------------
 
 export async function listProjects(): Promise<Project[]> {
-  const userId = requireUid();
-  const snap = await getDocs(
-    query(collection(getDb(), COLLECTIONS.projects), where("created_by", "==", userId)),
+  const accessibleIds = await getProjectIdsWithSectionAccess("can_view_project");
+  if (accessibleIds.size === 0) return [];
+
+  const snaps = await Promise.all(
+    [...accessibleIds].map((projectId) => getDoc(doc(getDb(), COLLECTIONS.projects, projectId))),
   );
-  return snap.docs
-    .map(mapProject)
+  const projects = snaps
+    .filter((snap): snap is Snap => snap.exists())
+    .map((snap) => mapProject(snap))
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+  return projects;
 }
 
 export async function getProject(id: string): Promise<Project | null> {
   const snap = await getDoc(doc(getDb(), COLLECTIONS.projects, id));
-  return snap.exists() ? mapProject(snap as Snap) : null;
+  if (!snap.exists()) return null;
+  const project = mapProject(snap as Snap);
+  const access = await getCurrentUserProjectAccess(id);
+  return access && hasProjectViewAccess(access) ? project : null;
 }
 
 export interface NewProjectInput {
@@ -269,6 +476,16 @@ export async function createProject(input: NewProjectInput): Promise<Project> {
     updated_at: serverTimestamp(),
   });
   const project = mapProject((await getDoc(ref)) as Snap);
+  const userId = requireUid();
+  await setDoc(doc(getDb(), COLLECTIONS.projectAccess, accessDocId(project.id, userId)), {
+    project_id: project.id,
+    user_id: userId,
+    email: getFirebaseAuth().currentUser?.email ?? null,
+    ...fullProjectPermissions(),
+    created_by: userId,
+    created_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+  });
   await logActivity({
     action_type: "project_created",
     entity_type: "project",
@@ -277,6 +494,176 @@ export async function createProject(input: NewProjectInput): Promise<Project> {
     description: `Project "${project.name}" was created`,
   });
   return project;
+}
+
+export async function listProjectMembers(projectId: string): Promise<ProjectAccess[]> {
+  const access = await getCurrentUserProjectAccess(projectId);
+  if (!access || !access.can_manage_members) {
+    throw new Error("You do not have permission to manage users for this project.");
+  }
+
+  const db = getDb();
+  const [projectSnap, memberSnap] = await Promise.all([
+    getDoc(doc(db, COLLECTIONS.projects, projectId)),
+    getDocs(query(collection(db, COLLECTIONS.projectAccess), where("project_id", "==", projectId))),
+  ]);
+
+  const members: ProjectAccess[] = [];
+  if (projectSnap.exists()) {
+    const ownerId = projectSnap.data().created_by as string | null;
+    if (ownerId) {
+      members.push({
+        id: accessDocId(projectId, ownerId),
+        project_id: projectId,
+        user_id: ownerId,
+        email: ownerId === uid() ? getFirebaseAuth().currentUser?.email ?? null : null,
+        ...fullProjectPermissions(),
+        invite_token: null,
+        created_by: ownerId,
+        created_at: toIso(projectSnap.data().created_at),
+        updated_at: toIso(projectSnap.data().updated_at),
+      });
+    }
+  }
+
+  memberSnap.docs.forEach((snap) => {
+    members.push(mapProjectAccess(snap as Snap));
+  });
+
+  const seen = new Set<string>();
+  return members.filter((member) => {
+    const key = member.user_id;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export interface UpdateProjectAccessInput extends ProjectPermissionState {
+  email?: string | null;
+}
+
+export async function updateProjectAccess(
+  projectId: string,
+  userId: string,
+  input: UpdateProjectAccessInput,
+): Promise<ProjectAccess> {
+  const current = await requireProjectPermission(projectId, "can_manage_members");
+  const ref = doc(getDb(), COLLECTIONS.projectAccess, accessDocId(projectId, userId));
+  const next = {
+    project_id: projectId,
+    user_id: userId,
+    email: input.email ?? null,
+    ...permissionStateFromFields(input),
+    invite_token: null,
+    created_by: current.user_id,
+    updated_at: serverTimestamp(),
+  };
+  const existing = await getDoc(ref);
+  await setDoc(ref, {
+    ...next,
+    created_at: existing.exists() ? existing.data().created_at : serverTimestamp(),
+  }, { merge: true });
+  return mapProjectAccess((await getDoc(ref)) as Snap);
+}
+
+export async function removeProjectAccess(
+  projectId: string,
+  userId: string,
+): Promise<void> {
+  await requireProjectPermission(projectId, "can_manage_members");
+  if (uid() === userId) {
+    throw new Error("You cannot remove your own project access.");
+  }
+  await deleteDoc(doc(getDb(), COLLECTIONS.projectAccess, accessDocId(projectId, userId)));
+}
+
+export interface NewProjectInviteInput {
+  project_id: string;
+  project_name: string;
+  invited_email: string;
+  message?: string | null;
+  permissions?: Partial<ProjectPermissionState>;
+}
+
+export async function createProjectInvite(
+  input: NewProjectInviteInput,
+): Promise<ProjectInvite> {
+  await requireProjectPermission(input.project_id, "can_manage_members");
+  const token = generateActionToken();
+  const permissions = normalizeInvitePermissions(input.permissions ?? {});
+  const ref = doc(getDb(), COLLECTIONS.projectInvites, inviteDocId(token));
+  await setDoc(ref, {
+    token,
+    project_id: input.project_id,
+    project_name: input.project_name,
+    invited_email: input.invited_email.trim().toLowerCase(),
+    message: input.message?.trim() ? input.message.trim() : null,
+    ...permissions,
+    status: "Pending",
+    invited_by: uid(),
+    invited_by_email: getFirebaseAuth().currentUser?.email ?? null,
+    accepted_by: null,
+    accepted_at: null,
+    expires_at: defaultExpiration(14),
+    created_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+  });
+  return mapProjectInvite((await getDoc(ref)) as Snap);
+}
+
+export async function listProjectInvites(projectId: string): Promise<ProjectInvite[]> {
+  await requireProjectPermission(projectId, "can_manage_members");
+  const snap = await getDocs(
+    query(collection(getDb(), COLLECTIONS.projectInvites), where("project_id", "==", projectId)),
+  );
+  return snap.docs.map((s) => mapProjectInvite(s as Snap)).sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+}
+
+export async function getProjectInviteByToken(token: string): Promise<ProjectInvite | null> {
+  const snap = await getDoc(doc(getDb(), COLLECTIONS.projectInvites, inviteDocId(token)));
+  return snap.exists() ? mapProjectInvite(snap as Snap) : null;
+}
+
+export async function revokeProjectInvite(token: string): Promise<ProjectInvite> {
+  const invite = await getProjectInviteByToken(token);
+  if (!invite) throw new Error("Invite not found.");
+  await requireProjectPermission(invite.project_id, "can_manage_members");
+  const ref = doc(getDb(), COLLECTIONS.projectInvites, inviteDocId(token));
+  await updateDoc(ref, { status: "Revoked", updated_at: serverTimestamp() });
+  return mapProjectInvite((await getDoc(ref)) as Snap);
+}
+
+export async function acceptProjectInvite(token: string): Promise<ProjectAccess> {
+  const invite = await getProjectInviteByToken(token);
+  if (!invite) throw new Error("Invite not found.");
+  const auth = getFirebaseAuth().currentUser;
+  if (!auth) throw new Error("You must be signed in to accept an invite.");
+  if ((auth.email ?? "").toLowerCase() !== invite.invited_email.toLowerCase()) {
+    throw new Error("That invite was sent to a different email address.");
+  }
+
+  const accessRef = doc(getDb(), COLLECTIONS.projectAccess, accessDocId(invite.project_id, auth.uid));
+  await setDoc(accessRef, {
+    project_id: invite.project_id,
+    user_id: auth.uid,
+    email: auth.email ?? null,
+    invite_token: token,
+    ...permissionStateFromFields(invite),
+    created_by: invite.invited_by,
+    created_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+  }, { merge: true });
+
+  const inviteRef = doc(getDb(), COLLECTIONS.projectInvites, inviteDocId(token));
+  await updateDoc(inviteRef, {
+    status: "Accepted",
+    accepted_by: auth.uid,
+    accepted_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+  });
+
+  return mapProjectAccess((await getDoc(accessRef)) as Snap);
 }
 
 // ---------------------------------------------------------------------------
@@ -374,10 +761,10 @@ export async function listTrades(
   projectId?: string,
 ): Promise<TradeWithContractor[]> {
   const db = getDb();
-  const userId = requireUid();
+  const visibleProjectIds = await getProjectIdsWithSectionAccess("can_view_trades");
   // Load trades and contractors, then join in memory.
   const [tradeSnap, contractors] = await Promise.all([
-    getDocs(query(collection(db, COLLECTIONS.trades), where("created_by", "==", userId))),
+    getDocs(collection(db, COLLECTIONS.trades)),
     listContractors(),
   ]);
   const contractorById = new Map(contractors.map((c) => [c.id, c]));
@@ -385,6 +772,7 @@ export async function listTrades(
   let trades = tradeSnap.docs
     .map(mapTrade)
     .sort((a, b) => a.name.localeCompare(b.name));
+  trades = trades.filter((trade) => visibleProjectIds.has(trade.project_id));
   if (projectId) trades = trades.filter((t) => t.project_id === projectId);
 
   return trades.map((t) => ({
@@ -413,6 +801,7 @@ export interface UpdateTradeInput {
 }
 
 export async function createTrade(input: NewTradeInput): Promise<Trade> {
+  await requireProjectPermission(input.project_id, "can_edit_trades");
   const ref = await addDoc(collection(getDb(), COLLECTIONS.trades), {
     project_id: input.project_id,
     name: input.name,
@@ -439,6 +828,12 @@ export async function updateTrade(
   input: UpdateTradeInput,
 ): Promise<Trade> {
   const ref = doc(getDb(), COLLECTIONS.trades, id);
+  const current = await getDoc(ref);
+  if (!current.exists()) {
+    throw new Error("Trade not found.");
+  }
+  const existing = mapTrade(current as Snap);
+  await requireProjectPermission(existing.project_id, "can_edit_trades");
   await updateDoc(ref, {
     project_id: input.project_id,
     name: input.name,
@@ -451,7 +846,12 @@ export async function updateTrade(
 
 /** Deletes a trade record. */
 export async function deleteTrade(id: string): Promise<void> {
-  await deleteDoc(doc(getDb(), COLLECTIONS.trades, id));
+  const ref = doc(getDb(), COLLECTIONS.trades, id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const trade = mapTrade(snap as Snap);
+  await requireProjectPermission(trade.project_id, "can_edit_trades");
+  await deleteDoc(ref);
 }
 
 // ---------------------------------------------------------------------------
@@ -537,19 +937,14 @@ export async function listTradePhases(
   filters: PhaseFilters = {},
 ): Promise<TradePhaseWithRelations[]> {
   const db = getDb();
-  const userId = requireUid();
+  const visibleProjectIds = await getProjectIdsWithSectionAccess("can_view_trade_phases");
   // Load phases plus the collections we need to resolve names, then join.
   const [phaseSnap, tradeSnap, contractorSnap, projectSnap] = await Promise.all(
     [
-      getDocs(
-        query(
-          collection(db, COLLECTIONS.tradePhases),
-          where("created_by", "==", userId),
-        ),
-      ),
-      getDocs(query(collection(db, COLLECTIONS.trades), where("created_by", "==", userId))),
-      getDocs(query(collection(db, COLLECTIONS.contractors), where("created_by", "==", userId))),
-      getDocs(query(collection(db, COLLECTIONS.projects), where("created_by", "==", userId))),
+      getDocs(collection(db, COLLECTIONS.tradePhases)),
+      getDocs(collection(db, COLLECTIONS.trades)),
+      getDocs(collection(db, COLLECTIONS.contractors)),
+      getDocs(collection(db, COLLECTIONS.projects)),
     ],
   );
 
@@ -561,7 +956,10 @@ export async function listTradePhases(
 
   const today = todayIso();
   const normalizedPhases = await Promise.all(
-    phaseSnap.docs.map((s) => applyAutomaticNeedsInspection(mapPhase(s), today)),
+    phaseSnap.docs
+      .map((s) => mapPhase(s))
+      .filter((phase) => visibleProjectIds.has(phase.project_id))
+      .map((phase) => applyAutomaticNeedsInspection(phase, today)),
   );
 
   let phases = normalizedPhases
@@ -587,7 +985,10 @@ export async function getTradePhase(
   const db = getDb();
   const snap = await getDoc(doc(db, COLLECTIONS.tradePhases, id));
   if (!snap.exists()) return null;
-  const phase = await applyAutomaticNeedsInspection(mapPhase(snap as Snap), todayIso());
+  const basePhase = mapPhase(snap as Snap);
+  const access = await getCurrentUserProjectAccess(basePhase.project_id);
+  if (!access || !access.can_view_trade_phases) return null;
+  const phase = await applyAutomaticNeedsInspection(basePhase, todayIso());
 
   // Fetch only the related docs this phase references.
   const [tradeDoc, contractorDoc, projectDoc] = await Promise.all([
@@ -710,15 +1111,11 @@ export async function extendTradePhaseEndDate(
 // ---------------------------------------------------------------------------
 
 export async function listRecentActivity(limit = 10): Promise<ActivityLog[]> {
-  const userId = requireUid();
-  const snap = await getDocs(
-    query(
-      collection(getDb(), COLLECTIONS.activityLogs),
-      where("user_id", "==", userId),
-    ),
-  );
+  const visibleProjectIds = await getProjectIdsWithSectionAccess("can_view_activity");
+  const snap = await getDocs(collection(getDb(), COLLECTIONS.activityLogs));
   return snap.docs
     .map(mapActivity)
+    .filter((activity) => activity.project_id && visibleProjectIds.has(activity.project_id))
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
     .slice(0, limit);
 }
@@ -842,12 +1239,11 @@ export interface MaterialOrderFilters {
 export async function listMaterialOrders(
   filters: MaterialOrderFilters = {},
 ): Promise<MaterialOrder[]> {
-  const userId = requireUid();
-  const snap = await getDocs(
-    query(collection(getDb(), COLLECTIONS.materialOrders), where("created_by", "==", userId)),
-  );
+  const visibleProjectIds = await getProjectIdsWithSectionAccess("can_view_material_orders");
+  const snap = await getDocs(collection(getDb(), COLLECTIONS.materialOrders));
   let orders = snap.docs
     .map(mapMaterialOrder)
+    .filter((order) => visibleProjectIds.has(order.project_id))
     .sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
 
   if (filters.projectId)
@@ -888,6 +1284,7 @@ export interface UpdateMaterialOrderInput {
 export async function createMaterialOrder(
   input: NewMaterialOrderInput,
 ): Promise<MaterialOrder> {
+  await requireProjectPermission(input.project_id, "can_edit_material_orders");
   const ref = await addDoc(collection(getDb(), COLLECTIONS.materialOrders), {
     name: input.name,
     supplier: input.supplier || null,
@@ -931,6 +1328,8 @@ export async function updateMaterialOrder(
 ): Promise<MaterialOrder> {
   const ref = doc(getDb(), COLLECTIONS.materialOrders, id);
   const before = await getMaterialOrder(id);
+  if (!before) throw new Error("Material order not found.");
+  await requireProjectPermission(before.project_id, "can_edit_material_orders");
   await updateDoc(ref, {
     name: input.name,
     supplier: input.supplier || null,
@@ -965,7 +1364,12 @@ export async function updateMaterialOrder(
 
 /** Deletes a material order record. */
 export async function deleteMaterialOrder(id: string): Promise<void> {
-  await deleteDoc(doc(getDb(), COLLECTIONS.materialOrders, id));
+  const ref = doc(getDb(), COLLECTIONS.materialOrders, id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const order = mapMaterialOrder(snap as Snap);
+  await requireProjectPermission(order.project_id, "can_edit_material_orders");
+  await deleteDoc(ref);
 }
 
 export async function updateMaterialOrderStatus(
@@ -973,6 +1377,10 @@ export async function updateMaterialOrderStatus(
   status: MaterialOrderStatus,
 ): Promise<MaterialOrder> {
   const ref = doc(getDb(), COLLECTIONS.materialOrders, id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Material order not found.");
+  const before = mapMaterialOrder(snap as Snap);
+  await requireProjectPermission(before.project_id, "can_edit_material_orders");
   await updateDoc(ref, { status, updated_at: serverTimestamp() });
   const order = mapMaterialOrder((await getDoc(ref)) as Snap);
   await logActivity({
@@ -1001,6 +1409,8 @@ export async function updateMaterialOrderStatus(
 export async function listCompletionRecords(
   tradePhaseId: string,
 ): Promise<CompletionRecord[]> {
+  const phase = await getTradePhase(tradePhaseId);
+  if (!phase) return [];
   const docs = await listForPhase(COLLECTIONS.completionRecords, tradePhaseId);
   return docs.map(mapCompletion);
 }
@@ -1041,6 +1451,7 @@ export interface NewCompletionInput {
 export async function createCompletionRecord(
   input: NewCompletionInput,
 ): Promise<CompletionRecord> {
+  await requireProjectPermission(input.project_id, "can_view_trade_phases");
   const ref = await addDoc(collection(getDb(), COLLECTIONS.completionRecords), {
     trade_phase_id: input.trade_phase_id,
     project_id: input.project_id,
@@ -1103,6 +1514,7 @@ export async function reviewCompletion(
   const status: CompletionStatus = approved ? "Approved" : "Needs Fix";
 
   const ref = doc(getDb(), COLLECTIONS.completionRecords, recordId);
+  await requireProjectPermission(input.project_id, "can_edit_trade_phases");
   await updateDoc(ref, {
     status,
     review_notes: input.notes || null,
@@ -1147,6 +1559,8 @@ export async function reviewCompletion(
 export async function listInspections(
   tradePhaseId: string,
 ): Promise<Inspection[]> {
+  const phase = await getTradePhase(tradePhaseId);
+  if (!phase) return [];
   const docs = await listForPhase(COLLECTIONS.inspections, tradePhaseId);
   return docs.map(mapInspection);
 }
@@ -1165,6 +1579,7 @@ export interface NewInspectionInput {
 export async function createInspection(
   input: NewInspectionInput,
 ): Promise<Inspection> {
+  await requireProjectPermission(input.project_id, "can_edit_trade_phases");
   const ref = await addDoc(collection(getDb(), COLLECTIONS.inspections), {
     trade_phase_id: input.trade_phase_id,
     project_id: input.project_id,
@@ -1196,6 +1611,8 @@ export async function createInspection(
 export async function listPunchItems(
   tradePhaseId: string,
 ): Promise<PunchItem[]> {
+  const phase = await getTradePhase(tradePhaseId);
+  if (!phase) return [];
   const docs = await listForPhase(COLLECTIONS.punchItems, tradePhaseId);
   return docs.map(mapPunchItem);
 }
@@ -1210,12 +1627,11 @@ export interface PunchItemFilters {
 export async function listAllPunchItems(
   filters: PunchItemFilters = {},
 ): Promise<PunchItem[]> {
-  const userId = requireUid();
-  const snap = await getDocs(
-    query(collection(getDb(), COLLECTIONS.punchItems), where("created_by", "==", userId)),
-  );
+  const visibleProjectIds = await getProjectIdsWithSectionAccess("can_view_punch_items");
+  const snap = await getDocs(collection(getDb(), COLLECTIONS.punchItems));
   let items = snap.docs
     .map(mapPunchItem)
+    .filter((item) => visibleProjectIds.has(item.project_id))
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 
   if (filters.projectId)
@@ -1242,6 +1658,7 @@ export async function createPunchItem(
   input: NewPunchItemInput,
 ): Promise<PunchItem> {
   const status = input.status ?? "Open";
+  await requireProjectPermission(input.project_id, "can_edit_punch_items");
   const ref = await addDoc(collection(getDb(), COLLECTIONS.punchItems), {
     trade_phase_id: input.trade_phase_id,
     project_id: input.project_id,
@@ -1273,6 +1690,10 @@ export async function updatePunchItemStatus(
   status: PunchItemStatus,
 ): Promise<PunchItem> {
   const ref = doc(getDb(), COLLECTIONS.punchItems, id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Punch item not found.");
+  const before = mapPunchItem(snap as Snap);
+  await requireProjectPermission(before.project_id, "can_edit_punch_items");
   const resolving = status === "Resolved" || status === "Closed";
   await updateDoc(ref, {
     status,
@@ -1307,6 +1728,10 @@ export async function updatePunchItem(
   input: UpdatePunchItemInput,
 ): Promise<PunchItem> {
   const ref = doc(getDb(), COLLECTIONS.punchItems, id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Punch item not found.");
+  const before = mapPunchItem(snap as Snap);
+  await requireProjectPermission(before.project_id, "can_edit_punch_items");
   const resolving = input.status === "Resolved" || input.status === "Closed";
   await updateDoc(ref, {
     title: input.title,
@@ -1325,7 +1750,10 @@ export async function updatePunchItem(
 export async function getPunchItem(id: string): Promise<PunchItem | null> {
   const ref = doc(getDb(), COLLECTIONS.punchItems, id);
   const snap = await getDoc(ref);
-  return snap.exists() ? mapPunchItem(snap as Snap) : null;
+  if (!snap.exists()) return null;
+  const item = mapPunchItem(snap as Snap);
+  const access = await getCurrentUserProjectAccess(item.project_id);
+  return access && access.can_view_punch_items ? item : null;
 }
 
 /**
@@ -1469,12 +1897,11 @@ export interface DocumentFilters {
 export async function listDocuments(
   filters: DocumentFilters = {},
 ): Promise<ProjectDocument[]> {
-  const userId = requireUid();
-  const snap = await getDocs(
-    query(collection(getDb(), COLLECTIONS.documents), where("uploaded_by", "==", userId)),
-  );
+  const visibleProjectIds = await getProjectIdsWithSectionAccess("can_view_documents");
+  const snap = await getDocs(collection(getDb(), COLLECTIONS.documents));
   let docs = snap.docs
     .map(mapDocument)
+    .filter((doc) => visibleProjectIds.has(doc.project_id))
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 
   if (filters.projectId)
@@ -1500,7 +1927,10 @@ export async function getDocument(
 ): Promise<ProjectDocument | null> {
   const ref = doc(getDb(), COLLECTIONS.documents, id);
   const snap = await getDoc(ref);
-  return snap.exists() ? mapDocument(snap as Snap) : null;
+  if (!snap.exists()) return null;
+  const document = mapDocument(snap as Snap);
+  const access = await getCurrentUserProjectAccess(document.project_id);
+  return access && access.can_view_documents ? document : null;
 }
 
 /**
@@ -1565,6 +1995,7 @@ export interface NewDocumentInput {
 export async function createDocument(
   input: NewDocumentInput,
 ): Promise<ProjectDocument> {
+  await requireProjectPermission(input.project_id, "can_edit_documents");
   const ref = await addDoc(collection(getDb(), COLLECTIONS.documents), {
     name: input.name,
     document_type: input.document_type,
@@ -1601,6 +2032,10 @@ export async function setDocumentPinned(
   pinned: boolean,
 ): Promise<ProjectDocument> {
   const ref = doc(getDb(), COLLECTIONS.documents, id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Document not found.");
+  const before = mapDocument(snap as Snap);
+  await requireProjectPermission(before.project_id, "can_edit_documents");
   await updateDoc(ref, { pinned, updated_at: serverTimestamp() });
   const document = mapDocument((await getDoc(ref)) as Snap);
   await logActivity({
@@ -1655,6 +2090,7 @@ export async function createActionLink(
   input: NewActionLinkInput,
 ): Promise<ContractorActionLink> {
   const userId = requireUid();
+  await requireProjectPermission(input.project_id, "can_edit_project");
   const token = generateActionToken();
   const ref = doc(getDb(), COLLECTIONS.contractorActionLinks, token);
   await setDoc(ref, {

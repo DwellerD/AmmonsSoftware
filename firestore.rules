@@ -19,6 +19,75 @@ service cloud.firestore {
       return signedIn() && request.resource.data[field] == request.auth.uid;
     }
 
+    function projectOwner(projectId) {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/projects/$(projectId)) &&
+        get(/databases/$(database)/documents/projects/$(projectId)).data.created_by == request.auth.uid;
+    }
+
+    function projectAccessPath(projectId, userId) {
+      return /databases/$(database)/documents/projectAccess/$(projectId + '_' + userId);
+    }
+
+    function projectInvitePath(token) {
+      return /databases/$(database)/documents/projectInvites/$(token);
+    }
+
+    function hasProjectAccess(projectId) {
+      return projectOwner(projectId) ||
+        (signedIn() && exists(projectAccessPath(projectId, request.auth.uid)));
+    }
+
+    function accessDoc(projectId) {
+      return get(projectAccessPath(projectId, request.auth.uid)).data;
+    }
+
+    function canViewProject(projectId) {
+      return hasProjectAccess(projectId) && (
+        projectOwner(projectId) ||
+        accessDoc(projectId).can_view_project ||
+        accessDoc(projectId).can_view_trades ||
+        accessDoc(projectId).can_view_trade_phases ||
+        accessDoc(projectId).can_view_material_orders ||
+        accessDoc(projectId).can_view_punch_items ||
+        accessDoc(projectId).can_view_documents ||
+        accessDoc(projectId).can_view_activity ||
+        accessDoc(projectId).can_manage_members
+      );
+    }
+
+    function canViewSection(projectId, field) {
+      return hasProjectAccess(projectId) && (
+        projectOwner(projectId) || accessDoc(projectId)[field] == true
+      );
+    }
+
+    function canEditSection(projectId, field) {
+      return hasProjectAccess(projectId) && (
+        projectOwner(projectId) || accessDoc(projectId)[field] == true
+      );
+    }
+
+    function canManageMembers(projectId) {
+      return hasProjectAccess(projectId) && (
+        projectOwner(projectId) || accessDoc(projectId).can_manage_members == true
+      );
+    }
+
+    function inviteMatchesAccess(token) {
+      return signedIn() &&
+        exists(projectInvitePath(token)) &&
+        get(projectInvitePath(token)).data.project_id == request.resource.data.project_id &&
+        get(projectInvitePath(token)).data.invited_email == request.auth.token.email &&
+        get(projectInvitePath(token)).data.status == "Pending" &&
+        request.resource.data.invite_token == token;
+    }
+
+    function canCreateAccessFromInvite(projectId, token) {
+      return inviteMatchesAccess(token) &&
+        get(projectInvitePath(token)).data.project_id == projectId;
+    }
+
     function projectPath(projectId) {
       return /databases/$(database)/documents/projects/$(projectId);
     }
@@ -59,9 +128,69 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /projectAccess/{accessId} {
+      allow read: if signedIn() && (
+        resource.data.user_id == request.auth.uid ||
+        canManageMembers(resource.data.project_id)
+      );
+      allow create: if signedIn() && (
+        (
+          request.resource.data.user_id == request.auth.uid &&
+          request.resource.data.created_by == request.auth.uid &&
+          request.resource.data.invite_token == null &&
+          projectOwner(request.resource.data.project_id)
+        ) ||
+        canCreateAccessFromInvite(request.resource.data.project_id, request.resource.data.invite_token)
+      );
+      allow update: if signedIn() && (
+        canManageMembers(resource.data.project_id) ||
+        (request.auth.uid == resource.data.user_id && resource.data.invite_token == request.resource.data.invite_token)
+      );
+      allow delete: if signedIn() && (
+        canManageMembers(resource.data.project_id) ||
+        request.auth.uid == resource.data.user_id
+      );
+    }
+
+    match /projectInvites/{token} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if signedIn() && canManageMembers(request.resource.data.project_id);
+      allow update: if signedIn() && (
+        canManageMembers(resource.data.project_id) ||
+        (
+          request.auth.token.email == resource.data.invited_email &&
+          resource.data.status == "Pending" &&
+          request.resource.data.status == "Accepted" &&
+          request.resource.data.project_id == resource.data.project_id &&
+          request.resource.data.invited_email == resource.data.invited_email &&
+          request.resource.data.token == resource.data.token &&
+          request.resource.data.project_name == resource.data.project_name &&
+          request.resource.data.message == resource.data.message &&
+          request.resource.data.can_view_project == resource.data.can_view_project &&
+          request.resource.data.can_edit_project == resource.data.can_edit_project &&
+          request.resource.data.can_view_trades == resource.data.can_view_trades &&
+          request.resource.data.can_edit_trades == resource.data.can_edit_trades &&
+          request.resource.data.can_view_trade_phases == resource.data.can_view_trade_phases &&
+          request.resource.data.can_edit_trade_phases == resource.data.can_edit_trade_phases &&
+          request.resource.data.can_view_material_orders == resource.data.can_view_material_orders &&
+          request.resource.data.can_edit_material_orders == resource.data.can_edit_material_orders &&
+          request.resource.data.can_view_punch_items == resource.data.can_view_punch_items &&
+          request.resource.data.can_edit_punch_items == resource.data.can_edit_punch_items &&
+          request.resource.data.can_view_documents == resource.data.can_view_documents &&
+          request.resource.data.can_edit_documents == resource.data.can_edit_documents &&
+          request.resource.data.can_view_activity == resource.data.can_view_activity &&
+          request.resource.data.can_edit_activity == resource.data.can_edit_activity &&
+          request.resource.data.can_manage_members == resource.data.can_manage_members
+        )
+      );
+      allow delete: if signedIn() && canManageMembers(resource.data.project_id);
+    }
+
     // Core workflow data is owner-scoped.
     match /projects/{projectId} {
-      allow read, update, delete: if ownsResource('created_by');
+      allow read: if canViewProject(projectId);
+      allow update, delete: if projectOwner(projectId);
       allow create: if createsOwned('created_by');
     }
 
@@ -71,55 +200,67 @@ service cloud.firestore {
     }
 
     match /trades/{tradeId} {
-      allow read, update, delete: if ownsResource('created_by');
-      allow create: if createsOwned('created_by') &&
-        ownsProject(request.resource.data.project_id);
+      allow read: if canViewSection(resource.data.project_id, 'can_view_trades') ||
+        canEditSection(resource.data.project_id, 'can_edit_trades');
+      allow update, delete: if canEditSection(resource.data.project_id, 'can_edit_trades');
+      allow create: if signedIn() &&
+        request.resource.data.created_by == request.auth.uid &&
+        canEditSection(request.resource.data.project_id, 'can_edit_trades');
     }
 
     match /tradePhases/{phaseId} {
-      allow read, update, delete: if ownsResource('created_by');
-      allow create: if createsOwned('created_by') &&
-        ownsProject(request.resource.data.project_id) &&
-        ownsTrade(request.resource.data.trade_id);
+      allow read: if canViewSection(resource.data.project_id, 'can_view_trade_phases') ||
+        canEditSection(resource.data.project_id, 'can_edit_trade_phases');
+      allow update, delete: if canEditSection(resource.data.project_id, 'can_edit_trade_phases');
+      allow create: if signedIn() &&
+        request.resource.data.created_by == request.auth.uid &&
+        canEditSection(request.resource.data.project_id, 'can_edit_trade_phases') &&
+        canEditSection(request.resource.data.project_id, 'can_edit_trades');
     }
 
     // Append-only audit trail.
     match /activityLogs/{logId} {
-      allow read: if ownsResource('user_id');
+      allow read: if canViewSection(resource.data.project_id, 'can_view_activity') ||
+        canEditSection(resource.data.project_id, 'can_edit_activity') ||
+        ownsResource('user_id');
       allow create: if createsOwned('user_id');
       allow update, delete: if false;
     }
 
     match /materialOrders/{orderId} {
-      allow read, update, delete: if ownsResource('created_by');
-      allow create: if createsOwned('created_by') &&
-        ownsProject(request.resource.data.project_id) &&
-        (
-          request.resource.data.trade_phase_id == null ||
-          ownsPhase(request.resource.data.trade_phase_id)
-        );
+      allow read: if canViewSection(resource.data.project_id, 'can_view_material_orders') ||
+        canEditSection(resource.data.project_id, 'can_edit_material_orders');
+      allow update, delete: if canEditSection(resource.data.project_id, 'can_edit_material_orders');
+      allow create: if signedIn() &&
+        request.resource.data.created_by == request.auth.uid &&
+        canEditSection(request.resource.data.project_id, 'can_edit_material_orders');
     }
 
     match /punchItems/{punchItemId} {
-      allow read, update, delete: if ownsResource('created_by');
-      allow create: if createsOwned('created_by') &&
-        ownsProject(request.resource.data.project_id) &&
-        ownsPhase(request.resource.data.trade_phase_id);
+      allow read: if canViewSection(resource.data.project_id, 'can_view_punch_items') ||
+        canEditSection(resource.data.project_id, 'can_edit_punch_items');
+      allow update, delete: if canEditSection(resource.data.project_id, 'can_edit_punch_items');
+      allow create: if signedIn() &&
+        request.resource.data.created_by == request.auth.uid &&
+        canEditSection(request.resource.data.project_id, 'can_edit_punch_items');
     }
 
     match /completionRecords/{recordId} {
-      allow read, update: if ownsResource('submitted_by');
+      allow read: if canViewSection(resource.data.project_id, 'can_view_trade_phases') ||
+        canEditSection(resource.data.project_id, 'can_edit_trade_phases') ||
+        ownsResource('submitted_by');
       allow create: if createsOwned('submitted_by') &&
-        ownsProject(request.resource.data.project_id) &&
-        ownsPhase(request.resource.data.trade_phase_id);
+        canViewSection(request.resource.data.project_id, 'can_view_trade_phases');
+      allow update: if canEditSection(resource.data.project_id, 'can_edit_trade_phases');
       allow delete: if false;
     }
 
     match /inspections/{inspectionId} {
-      allow read: if ownsResource('inspector_id');
+      allow read: if canViewSection(resource.data.project_id, 'can_view_trade_phases') ||
+        canEditSection(resource.data.project_id, 'can_edit_trade_phases') ||
+        ownsResource('inspector_id');
       allow create: if createsOwned('inspector_id') &&
-        ownsProject(request.resource.data.project_id) &&
-        ownsPhase(request.resource.data.trade_phase_id);
+        canEditSection(request.resource.data.project_id, 'can_edit_trade_phases');
       allow update, delete: if false;
     }
 
@@ -131,9 +272,12 @@ service cloud.firestore {
     }
 
     match /documents/{documentId} {
-      allow read, update, delete: if ownsResource('uploaded_by');
+      allow read: if canViewSection(resource.data.project_id, 'can_view_documents') ||
+        canEditSection(resource.data.project_id, 'can_edit_documents') ||
+        ownsResource('uploaded_by');
+      allow update, delete: if canEditSection(resource.data.project_id, 'can_edit_documents');
       allow create: if createsOwned('uploaded_by') &&
-        ownsProject(request.resource.data.project_id);
+        canEditSection(request.resource.data.project_id, 'can_edit_documents');
     }
 
     // Tokenized links: direct doc get stays public-by-token; management is
@@ -142,7 +286,7 @@ service cloud.firestore {
       allow get: if true;
       allow list, update: if ownsResource('created_by');
       allow create: if createsOwned('created_by') &&
-        ownsProject(request.resource.data.project_id);
+        canEditSection(request.resource.data.project_id, 'can_edit_trade_phases');
       allow delete: if false;
     }
   }

@@ -17,6 +17,7 @@ import {
   listTradePhases,
   listTrades,
 } from "@/lib/api";
+import { ManageUsersSection } from "@/components/projects/ManageUsersSection";
 import { PinnedPlansSection } from "@/components/documents/PinnedPlansSection";
 import { formatDate } from "@/lib/format";
 import type { Project, TradePhaseWithRelations } from "@/lib/database.types";
@@ -172,6 +173,10 @@ export default function ProjectDetailPage() {
             )}
           </CardBody>
         </Card>
+      </div>
+
+      <div className="mt-6">
+        <ManageUsersSection projectId={project.id} projectName={project.name} />
       </div>
 
       <div className="mt-6">

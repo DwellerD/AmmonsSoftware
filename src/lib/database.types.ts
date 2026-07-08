@@ -91,6 +91,66 @@ export interface Project {
   updated_at: string;
 }
 
+/** Fine-grained per-project sharing granted to a signed-in user. */
+export interface ProjectAccess {
+  id: string;
+  project_id: string;
+  user_id: string;
+  email: string | null;
+  can_view_project: boolean;
+  can_edit_project: boolean;
+  can_view_trades: boolean;
+  can_edit_trades: boolean;
+  can_view_trade_phases: boolean;
+  can_edit_trade_phases: boolean;
+  can_view_material_orders: boolean;
+  can_edit_material_orders: boolean;
+  can_view_punch_items: boolean;
+  can_edit_punch_items: boolean;
+  can_view_documents: boolean;
+  can_edit_documents: boolean;
+  can_view_activity: boolean;
+  can_edit_activity: boolean;
+  can_manage_members: boolean;
+  invite_token: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Public invite token used to grant access to one specific project. */
+export interface ProjectInvite {
+  id: string;
+  token: string;
+  project_id: string;
+  project_name: string;
+  invited_email: string;
+  message: string | null;
+  can_view_project: boolean;
+  can_edit_project: boolean;
+  can_view_trades: boolean;
+  can_edit_trades: boolean;
+  can_view_trade_phases: boolean;
+  can_edit_trade_phases: boolean;
+  can_view_material_orders: boolean;
+  can_edit_material_orders: boolean;
+  can_view_punch_items: boolean;
+  can_edit_punch_items: boolean;
+  can_view_documents: boolean;
+  can_edit_documents: boolean;
+  can_view_activity: boolean;
+  can_edit_activity: boolean;
+  can_manage_members: boolean;
+  status: "Pending" | "Accepted" | "Revoked" | "Expired";
+  invited_by: string | null;
+  invited_by_email: string | null;
+  accepted_by: string | null;
+  accepted_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** A trade discipline within a project (framing, plumbing, etc.). */
 export interface Trade {
   id: string;
