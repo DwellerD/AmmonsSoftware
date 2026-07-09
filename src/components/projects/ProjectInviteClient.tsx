@@ -221,8 +221,8 @@ export function ProjectInviteClient({ token }: ProjectInviteClientProps) {
         )}
 
         {!firebaseUser ? (
-          <div className="space-y-3 rounded-2xl border border-brand-200 bg-brand-50 p-4 text-sm text-ink-700">
-            <p className="font-medium text-ink-900">Sign in to accept</p>
+          <div className="space-y-3 rounded-2xl border border-slate-300 bg-slate-100 p-4 text-sm text-slate-900">
+            <p className="font-semibold text-slate-950">Sign in to accept</p>
             <p>
               Use the email address {invite.invited_email} to accept this invite.
             </p>

@@ -62,13 +62,20 @@ export function ManageUsersSection({
       setLoading(true);
       setError(null);
       try {
-        const [myAccess, projectMembers] = await Promise.all([
-          getMyProjectAccess(projectId),
-          listProjectMembers(projectId),
-        ]);
+        const myAccess = await getMyProjectAccess(projectId);
         if (!active) return;
 
         setAccess(myAccess);
+
+        // If this user cannot manage members, hide this section entirely.
+        if (!myAccess?.can_manage_members) {
+          setMembers([]);
+          setMemberDrafts({});
+          return;
+        }
+
+        const projectMembers = await listProjectMembers(projectId);
+        if (!active) return;
         setMembers(projectMembers);
 
         const drafts: Record<string, ProjectPermissionState> = {};
@@ -101,12 +108,12 @@ export function ManageUsersSection({
     return <LoadingState message="Loading project users…" />;
   }
 
-  if (error) {
-    return <ErrorAlert message={error} />;
-  }
-
   if (!canManage) {
     return null;
+  }
+
+  if (error) {
+    return <ErrorAlert message={error} />;
   }
 
   const activeMember = memberDialogTarget
