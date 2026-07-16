@@ -7,6 +7,7 @@ import { PageContainer, PageHeader } from "@/components/ui/PageContainer";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select, Textarea } from "@/components/ui/Field";
+import { PaginationControls } from "@/components/ui/PaginationControls";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/ui/States";
 import {
   listMaterialOrders,
@@ -45,6 +46,7 @@ interface MaterialEditForm {
  * review notes, update status, and keep an optional tracking number.
  */
 export default function MaterialOrdersPage() {
+  const PAGE_SIZE = 25;
   const { canManage } = useAuth();
   const searchParams = useSearchParams();
 
@@ -57,6 +59,7 @@ export default function MaterialOrdersPage() {
   const [projectId, setProjectId] = useState("");
   const [status, setStatus] = useState<"" | MaterialOrderStatus>("");
   const [tradeId, setTradeId] = useState("");
+  const [page, setPage] = useState(1);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [edit, setEdit] = useState<MaterialEditForm | null>(null);
@@ -121,6 +124,15 @@ export default function MaterialOrdersPage() {
       }),
     [orders, projectId, status, tradeId],
   );
+
+  useEffect(() => {
+    setPage(1);
+  }, [projectId, status, tradeId]);
+
+  const pagedOrders = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return visibleOrders.slice(start, start + PAGE_SIZE);
+  }, [page, visibleOrders]);
 
   const visibleTotalCost = useMemo(
     () =>
@@ -447,7 +459,7 @@ export default function MaterialOrdersPage() {
         <Card>
           <CardBody className="p-0">
             <ul className="divide-y divide-ink-100">
-              {visibleOrders.map((order) => (
+              {pagedOrders.map((order) => (
                 <li
                   key={order.id}
                   className="px-5 py-4"
@@ -520,6 +532,16 @@ export default function MaterialOrdersPage() {
             </ul>
           </CardBody>
         </Card>
+      )}
+
+      {!loading && !error && visibleOrders.length > 0 && (
+        <PaginationControls
+          page={page}
+          pageSize={PAGE_SIZE}
+          totalItems={visibleOrders.length}
+          label="material orders"
+          onPageChange={setPage}
+        />
       )}
     </PageContainer>
   );

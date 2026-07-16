@@ -105,7 +105,11 @@ export function MaterialsSection({
         status,
         expected_arrival_date: expected || undefined,
       });
-      setItems((prev) => [...prev, created]);
+      setItems((prev) => {
+        const existingIndex = prev.findIndex((item) => item.id === created.id);
+        if (existingIndex === -1) return [...prev, created];
+        return prev.map((item) => (item.id === created.id ? created : item));
+      });
       setName("");
       setSupplier("");
       setTrackingNumber("");

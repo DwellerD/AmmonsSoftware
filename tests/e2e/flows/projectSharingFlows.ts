@@ -49,6 +49,7 @@ export async function runInviteAcceptEditAndRemoveFlow(
   await invitePage.goto(inviteUrl);
   await invitePage.expectInviteDetails(projectName, gcEmail);
   await invitePage.expectWrongAccount(gcEmail, invitee.email);
+  await invitePage.expectCannotAcceptOrReject();
   await captureMilestone(page, testInfo, "Wrong-account guard shown with switch-account action");
 
   await invitePage.clickSwitchAccount();
@@ -60,6 +61,7 @@ export async function runInviteAcceptEditAndRemoveFlow(
   await invitePage.expectInviteDetails(projectName, gcEmail);
   await invitePage.acceptInvite();
   await page.waitForURL(/\/projects\/[^/]+$/, { timeout: 30_000 });
+  await projectDetail.expectManageUsersHidden();
   await captureMilestone(page, testInfo, "Invitee accepted and opened project");
 
   await page.goto("/projects");

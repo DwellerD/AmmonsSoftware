@@ -7,6 +7,7 @@ import { Card, CardBody } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/Badge";
 import { Select } from "@/components/ui/Field";
+import { PaginationControls } from "@/components/ui/PaginationControls";
 import {
   EmptyState,
   ErrorAlert,
@@ -43,6 +44,7 @@ import type {
  * Each row links to the trade phase detail page.
  */
 export default function TradePhasesPage() {
+  const PAGE_SIZE = 25;
   const [phases, setPhases] = useState<TradePhaseWithRelations[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [trades, setTrades] = useState<TradeWithContractor[]>([]);
@@ -55,6 +57,7 @@ export default function TradePhasesPage() {
   const [status, setStatus] = useState<"" | TradePhaseStatus>("");
   const [tradeId, setTradeId] = useState("");
   const [showArchive, setShowArchive] = useState(false);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     async function load() {
@@ -116,6 +119,15 @@ export default function TradePhasesPage() {
       }),
     [phases, projectId, showArchive, status, tradeId],
   );
+
+  useEffect(() => {
+    setPage(1);
+  }, [projectId, showArchive, status, tradeId]);
+
+  const pagedPhases = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return visiblePhases.slice(start, start + PAGE_SIZE);
+  }, [page, visiblePhases]);
 
   return (
     <PageContainer>
@@ -221,7 +233,7 @@ export default function TradePhasesPage() {
         <Card>
           <CardBody className="p-0">
             <ul className="divide-y divide-ink-100">
-              {visiblePhases.map((phase) => (
+              {pagedPhases.map((phase) => (
                 <li key={phase.id}>
                   <Link
                     href={`/trade-phases/${phase.id}`}
@@ -266,6 +278,16 @@ export default function TradePhasesPage() {
             </ul>
           </CardBody>
         </Card>
+      )}
+
+      {!loading && !error && visiblePhases.length > 0 && (
+        <PaginationControls
+          page={page}
+          pageSize={PAGE_SIZE}
+          totalItems={visiblePhases.length}
+          label="trade phases"
+          onPageChange={setPage}
+        />
       )}
     </PageContainer>
   );

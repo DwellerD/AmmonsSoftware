@@ -6,6 +6,7 @@ import { PageContainer, PageHeader } from "@/components/ui/PageContainer";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Field";
+import { PaginationControls } from "@/components/ui/PaginationControls";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/ui/States";
 import {
   listDocuments,
@@ -40,6 +41,7 @@ import type {
  * are shown first so the hardest-to-find files surface quickly.
  */
 export default function DocumentsPage() {
+  const PAGE_SIZE = 25;
   const { canManage } = useAuth();
 
   const [documents, setDocuments] = useState<ProjectDocument[]>([]);
@@ -55,6 +57,7 @@ export default function DocumentsPage() {
   const [documentType, setDocumentType] = useState<"" | DocumentType>("");
   const [tradeId, setTradeId] = useState("");
   const [pinnedOnly, setPinnedOnly] = useState(false);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     async function load() {
@@ -144,6 +147,15 @@ export default function DocumentsPage() {
       return a.created_at < b.created_at ? 1 : -1;
     });
   }, [documents, search, projectId, documentType, tradeId, pinnedOnly]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, projectId, documentType, tradeId, pinnedOnly]);
+
+  const pagedDocuments = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return visibleDocuments.slice(start, start + PAGE_SIZE);
+  }, [page, visibleDocuments]);
 
   return (
     <PageContainer>
@@ -298,7 +310,7 @@ export default function DocumentsPage() {
             <Card>
               <CardBody className="p-0">
                 <ul className="divide-y divide-ink-100">
-                  {visibleDocuments.map((d) => (
+                  {pagedDocuments.map((d) => (
                     <li key={d.id} className="px-5 py-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -371,6 +383,16 @@ export default function DocumentsPage() {
                 </ul>
               </CardBody>
             </Card>
+          )}
+
+          {visibleDocuments.length > 0 && (
+            <PaginationControls
+              page={page}
+              pageSize={PAGE_SIZE}
+              totalItems={visibleDocuments.length}
+              label="documents"
+              onPageChange={setPage}
+            />
           )}
         </>
       )}

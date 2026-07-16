@@ -46,6 +46,12 @@ export class ProjectDetailPage {
     await expect(this.memberRow(email)).toHaveCount(0);
   }
 
+  async expectManageUsersHidden(): Promise<void> {
+    await expect(
+      this.page.getByRole("heading", { name: "Manage users", level: 3 }),
+    ).toHaveCount(0);
+  }
+
   async openMemberManageDialog(email: string): Promise<void> {
     const row = this.memberRow(email);
     await expect(row).toBeVisible({ timeout: 30_000 });

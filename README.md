@@ -193,6 +193,24 @@ already exists.
 > the Sprint 3 demo records, delete the existing `Maple Street Apartments
 > (Demo)` project (and its related docs) first, then run `npm run seed` again.
 
+### 7. Firebase budget and usage guardrails (recommended)
+
+For production readiness on Blaze, configure basic spend visibility before
+traffic grows:
+
+1. Create a Firebase/Google Cloud budget for this project and add alerts at
+  25%, 50%, 75%, 90%, and 100%.
+2. Enable billing emails for owners/admins, and route alerts to your team
+  channel if possible.
+3. Watch Firestore operations (reads/writes/deletes), Storage egress, and
+  document/photo growth weekly.
+4. Investigate sudden jumps quickly: they usually come from unbounded list
+  queries, repeated writes, or repeated invite/link generation.
+
+PhaseBinder includes MVP safeguards to reduce obvious cost risk (bounded list
+reads, list pagination, and dedupe protection for repeated invites/action links/
+notifications), but budget alerts are still your first operational safety net.
+
 ---
 
 ## How Firebase is used

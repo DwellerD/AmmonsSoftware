@@ -5,6 +5,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit as queryLimit,
   query,
   serverTimestamp,
   setDoc,
@@ -25,6 +26,7 @@ import {
   defaultExpiration,
   entityTypeForAction,
   generateActionToken,
+  isActionLinkExpired,
 } from "@/lib/actionLinks";
 import type {
   ActionLinkEntityType,
@@ -100,6 +102,11 @@ const COLLECTIONS = {
   documents: "documents",
   contractorActionLinks: "contractorActionLinks",
 } as const;
+
+const QUERY_COLLECTION_READ_LIMIT = 250;
+const ACTIVITY_READ_LIMIT = 1000;
+const DEDUPE_SCAN_LIMIT = 100;
+const NOTIFICATION_DEDUPE_WINDOW_MS = 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -333,11 +340,20 @@ function chunkProjectIds(projectIds: Set<string>): string[][] {
 async function loadDocsByVisibleProjects(
   collectionName: string,
   projectIds: Set<string>,
+  maxDocs = QUERY_COLLECTION_READ_LIMIT,
 ): Promise<Snap[]> {
   if (projectIds.size === 0) return [];
+  const chunks = chunkProjectIds(projectIds);
+  const perChunkLimit = Math.max(1, Math.ceil(maxDocs / chunks.length));
   const snaps = await Promise.all(
-    chunkProjectIds(projectIds).map((ids) =>
-      getDocs(query(collection(getDb(), collectionName), where("project_id", "in", ids))),
+    chunks.map((ids) =>
+      getDocs(
+        query(
+          collection(getDb(), collectionName),
+          where("project_id", "in", ids),
+          queryLimit(perChunkLimit),
+        ),
+      ),
     ),
   );
   return snaps.flatMap((snap) => snap.docs as Snap[]);
@@ -484,9 +500,12 @@ function mapActivity(s: Snap): ActivityLog {
 export async function listProjects(): Promise<Project[]> {
   const accessibleIds = await getProjectIdsWithSectionAccess("can_view_project");
   if (accessibleIds.size === 0) return [];
+  const cappedIds = [...accessibleIds].slice(0, QUERY_COLLECTION_READ_LIMIT);
 
   const snaps = await Promise.all(
-    [...accessibleIds].map((projectId) => getDoc(doc(getDb(), COLLECTIONS.projects, projectId))),
+    cappedIds.map((projectId) =>
+      getDoc(doc(getDb(), COLLECTIONS.projects, projectId)),
+    ),
   );
   const projects = snaps
     .filter((snap): snap is Snap => snap.exists())
@@ -646,15 +665,43 @@ export async function createProjectInvite(
   input: NewProjectInviteInput,
 ): Promise<ProjectInvite> {
   await requireProjectPermission(input.project_id, "can_manage_members");
-  const token = generateActionToken();
+  const invitedEmail = input.invited_email.trim().toLowerCase();
   const permissions = normalizeInvitePermissions(input.permissions ?? {});
+  const inviteMessage = input.message?.trim() ? input.message.trim() : null;
+
+  const existingInvites = await getDocs(
+    query(
+      collection(getDb(), COLLECTIONS.projectInvites),
+      where("project_id", "==", input.project_id),
+      queryLimit(DEDUPE_SCAN_LIMIT),
+    ),
+  );
+  const pendingExisting = existingInvites.docs.find((snap) => {
+    const data = snap.data();
+    return (
+      (data.invited_email as string | null)?.toLowerCase() === invitedEmail &&
+      data.status === "Pending"
+    );
+  });
+
+  if (pendingExisting) {
+    await updateDoc(pendingExisting.ref, {
+      project_name: input.project_name,
+      message: inviteMessage,
+      ...permissions,
+      updated_at: serverTimestamp(),
+    });
+    return mapProjectInvite((await getDoc(pendingExisting.ref)) as Snap);
+  }
+
+  const token = generateActionToken();
   const ref = doc(getDb(), COLLECTIONS.projectInvites, inviteDocId(token));
   await setDoc(ref, {
     token,
     project_id: input.project_id,
     project_name: input.project_name,
-    invited_email: input.invited_email.trim().toLowerCase(),
-    message: input.message?.trim() ? input.message.trim() : null,
+    invited_email: invitedEmail,
+    message: inviteMessage,
     ...permissions,
     status: "Pending",
     invited_by: uid(),
@@ -1275,7 +1322,11 @@ export async function extendTradePhaseEndDate(
 
 export async function listRecentActivity(limit = 10): Promise<ActivityLog[]> {
   const visibleProjectIds = await getProjectIdsWithSectionAccess("can_view_activity");
-  const snap = await loadDocsByVisibleProjects(COLLECTIONS.activityLogs, visibleProjectIds);
+  const snap = await loadDocsByVisibleProjects(
+    COLLECTIONS.activityLogs,
+    visibleProjectIds,
+    ACTIVITY_READ_LIMIT,
+  );
   return snap
     .map(mapActivity)
     .filter((activity) => activity.project_id && visibleProjectIds.has(activity.project_id))
@@ -1370,7 +1421,11 @@ async function listForProject(
   projectId: string,
 ): Promise<Snap[]> {
   const snap = await getDocs(
-    query(collection(getDb(), collectionName), where("project_id", "==", projectId)),
+    query(
+      collection(getDb(), collectionName),
+      where("project_id", "==", projectId),
+      queryLimit(QUERY_COLLECTION_READ_LIMIT),
+    ),
   );
   return [...snap.docs].sort((a, b) => {
     const at = a.data().created_at;
@@ -2002,8 +2057,30 @@ export interface NewNotificationInput {
 export async function createNotification(
   input: NewNotificationInput,
 ): Promise<Notification> {
+  const currentUserId = uid();
+  const recentSnap = await getDocs(
+    query(
+      collection(getDb(), COLLECTIONS.notifications),
+      where("user_id", "==", currentUserId),
+      queryLimit(DEDUPE_SCAN_LIMIT),
+    ),
+  );
+  const nowMs = Date.now();
+  const existing = recentSnap.docs
+    .map((s) => mapNotification(s as Snap))
+    .find((n) =>
+      n.notification_type === input.notification_type &&
+      n.related_entity_type === input.related_entity_type &&
+      n.related_entity_id === input.related_entity_id &&
+      n.message === input.message &&
+      nowMs - new Date(n.created_at).getTime() <= NOTIFICATION_DEDUPE_WINDOW_MS,
+    );
+  if (existing) {
+    return existing;
+  }
+
   const ref = await addDoc(collection(getDb(), COLLECTIONS.notifications), {
-    user_id: uid(),
+    user_id: currentUserId,
     recipient_id: input.recipient_id ?? null,
     notification_type: input.notification_type,
     related_entity_type: input.related_entity_type,
@@ -2021,7 +2098,11 @@ export async function createNotification(
 export async function listNotifications(): Promise<Notification[]> {
   const userId = requireUid();
   const snap = await getDocs(
-    query(collection(getDb(), COLLECTIONS.notifications), where("user_id", "==", userId)),
+    query(
+      collection(getDb(), COLLECTIONS.notifications),
+      where("user_id", "==", userId),
+      queryLimit(QUERY_COLLECTION_READ_LIMIT),
+    ),
   );
   return snap.docs
     .map(mapNotification)
@@ -2274,14 +2355,38 @@ export async function createActionLink(
 ): Promise<ContractorActionLink> {
   const userId = requireUid();
   await requireProjectPermission(input.project_id, "can_edit_project");
+  const relatedEntityType =
+    input.related_entity_type ?? entityTypeForAction(input.action_type);
+
+  const existingSnap = await getDocs(
+    query(
+      collection(getDb(), COLLECTIONS.contractorActionLinks),
+      where("created_by", "==", userId),
+      queryLimit(DEDUPE_SCAN_LIMIT),
+    ),
+  );
+  const existingActive = existingSnap.docs
+    .map((d) => mapActionLink(d as Snap))
+    .find((link) =>
+      link.status === "Active" &&
+      !isActionLinkExpired(link) &&
+      link.action_type === input.action_type &&
+      link.related_entity_type === relatedEntityType &&
+      link.related_entity_id === input.related_entity_id &&
+      link.contractor_id === input.contractor_id &&
+      link.project_id === input.project_id,
+    );
+  if (existingActive) {
+    return existingActive;
+  }
+
   const token = generateActionToken();
   const ref = doc(getDb(), COLLECTIONS.contractorActionLinks, token);
   await setDoc(ref, {
     created_by: userId,
     token,
     action_type: input.action_type,
-    related_entity_type:
-      input.related_entity_type ?? entityTypeForAction(input.action_type),
+    related_entity_type: relatedEntityType,
     related_entity_id: input.related_entity_id,
     contractor_id: input.contractor_id,
     project_id: input.project_id,
@@ -2303,7 +2408,16 @@ export async function getActionLinkByToken(
 ): Promise<ContractorActionLink | null> {
   const ref = doc(getDb(), COLLECTIONS.contractorActionLinks, token);
   const snap = await getDoc(ref);
-  return snap.exists() ? mapActionLink(snap as Snap) : null;
+  if (!snap.exists()) return null;
+  const link = mapActionLink(snap as Snap);
+  if (link.status === "Active" && isActionLinkExpired(link)) {
+    await updateDoc(ref, {
+      status: "Expired" as ActionLinkStatus,
+      updated_at: serverTimestamp(),
+    });
+    return { ...link, status: "Expired" };
+  }
+  return link;
 }
 
 export interface ActionLinkFilters {
@@ -2320,9 +2434,32 @@ export async function listActionLinks(
 ): Promise<ContractorActionLink[]> {
   const userId = requireUid();
   const snap = await getDocs(
-    query(collection(getDb(), COLLECTIONS.contractorActionLinks), where("created_by", "==", userId)),
+    query(
+      collection(getDb(), COLLECTIONS.contractorActionLinks),
+      where("created_by", "==", userId),
+      queryLimit(QUERY_COLLECTION_READ_LIMIT),
+    ),
   );
   let links = snap.docs.map((d) => mapActionLink(d as Snap));
+
+  const expiredActiveLinks = links.filter(
+    (link) => link.status === "Active" && isActionLinkExpired(link),
+  );
+  if (expiredActiveLinks.length > 0) {
+    await Promise.all(
+      expiredActiveLinks.map((link) =>
+        updateDoc(doc(getDb(), COLLECTIONS.contractorActionLinks, link.token), {
+          status: "Expired" as ActionLinkStatus,
+          updated_at: serverTimestamp(),
+        }),
+      ),
+    );
+    const expiredSet = new Set(expiredActiveLinks.map((link) => link.token));
+    links = links.map((link) =>
+      expiredSet.has(link.token) ? { ...link, status: "Expired" } : link,
+    );
+  }
+
   if (filters.projectId)
     links = links.filter((l) => l.project_id === filters.projectId);
   if (filters.contractorId)

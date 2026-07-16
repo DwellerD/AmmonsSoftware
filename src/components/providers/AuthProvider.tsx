@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
@@ -48,6 +49,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const authTransitionRef = useRef(0);
 
   useEffect(() => {
     // Without config we can't talk to Firebase; stop the loading spinner.
@@ -58,6 +60,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const auth = getFirebaseAuth();
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      const transitionId = ++authTransitionRef.current;
+      setLoading(true);
+      setProfile(null);
+
       let nextUser = user;
       if (
         !nextUser &&
@@ -71,7 +77,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setFirebaseUser(nextUser);
 
       if (!nextUser) {
-        setProfile(null);
         setLoading(false);
         return;
       }
@@ -81,6 +86,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const db = getDb();
         const ref = doc(db, "users", nextUser.uid);
         const snap = await getDoc(ref);
+
+        if (
+          transitionId !== authTransitionRef.current ||
+          auth.currentUser?.uid !== nextUser.uid
+        ) {
+          return;
+        }
 
         if (snap.exists()) {
           const data = snap.data();
@@ -100,6 +112,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             created_at: serverTimestamp(),
             updated_at: serverTimestamp(),
           });
+          if (
+            transitionId !== authTransitionRef.current ||
+            auth.currentUser?.uid !== nextUser.uid
+          ) {
+            return;
+          }
           setProfile({
             id: nextUser.uid,
             email: nextUser.email,
@@ -110,10 +128,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           });
         }
       } catch (err) {
-        console.warn("Failed to load profile:", err);
-        setProfile(null);
+        if (transitionId === authTransitionRef.current) {
+          console.warn("Failed to load profile:", err);
+          setProfile(null);
+        }
       } finally {
-        setLoading(false);
+        if (transitionId === authTransitionRef.current) {
+          setLoading(false);
+        }
       }
     });
 

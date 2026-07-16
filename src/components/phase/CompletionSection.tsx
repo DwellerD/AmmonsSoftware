@@ -195,7 +195,13 @@ export function CompletionSection({
         notes: note.trim() || undefined,
         photo_urls,
       });
-      setRecords((prev) => [...prev, created]);
+      setRecords((prev) => {
+        const existingIndex = prev.findIndex((record) => record.id === created.id);
+        if (existingIndex === -1) return [...prev, created];
+        return prev.map((record) =>
+          record.id === created.id ? created : record,
+        );
+      });
       setNote("");
       previews.forEach((url) => URL.revokeObjectURL(url));
       setFiles([]);

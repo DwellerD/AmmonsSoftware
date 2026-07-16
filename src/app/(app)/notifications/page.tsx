@@ -5,6 +5,7 @@ import { PageContainer, PageHeader } from "@/components/ui/PageContainer";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Field";
+import { PaginationControls } from "@/components/ui/PaginationControls";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/ui/States";
 import { listNotifications, markNotificationRead } from "@/lib/api";
 import {
@@ -32,12 +33,14 @@ import type {
  * messaging is wired up.
  */
 export default function NotificationsPage() {
+  const PAGE_SIZE = 25;
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [statusFilter, setStatusFilter] = useState<"" | NotificationStatus>("");
   const [typeFilter, setTypeFilter] = useState<"" | NotificationType>("");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     async function load() {
@@ -77,6 +80,15 @@ export default function NotificationsPage() {
       }),
     [notifications, statusFilter, typeFilter],
   );
+
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter, typeFilter]);
+
+  const pagedNotifications = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return visible.slice(start, start + PAGE_SIZE);
+  }, [page, visible]);
 
   async function handleMarkRead(id: string) {
     const previous = notifications;
@@ -141,7 +153,7 @@ export default function NotificationsPage() {
         <Card>
           <CardBody className="p-0">
             <ul className="divide-y divide-ink-100">
-              {visible.map((n) => (
+              {pagedNotifications.map((n) => (
                 <li
                   key={n.id}
                   className={cn(
@@ -179,6 +191,16 @@ export default function NotificationsPage() {
             </ul>
           </CardBody>
         </Card>
+      )}
+
+      {!loading && !error && visible.length > 0 && (
+        <PaginationControls
+          page={page}
+          pageSize={PAGE_SIZE}
+          totalItems={visible.length}
+          label="notifications"
+          onPageChange={setPage}
+        />
       )}
     </PageContainer>
   );

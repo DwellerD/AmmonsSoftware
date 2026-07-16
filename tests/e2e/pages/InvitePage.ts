@@ -49,6 +49,15 @@ export class InvitePage {
     await this.page.waitForURL(/\/login\?redirectTo=/, { timeout: 30_000 });
   }
 
+  async expectCannotAcceptOrReject(): Promise<void> {
+    await expect(
+      this.page.getByRole("button", { name: "Accept invite" }),
+    ).toHaveCount(0);
+    await expect(
+      this.page.getByRole("button", { name: "Reject invite" }),
+    ).toHaveCount(0);
+  }
+
   async acceptInvite(): Promise<void> {
     await this.page.getByRole("button", { name: "Accept invite" }).click();
   }

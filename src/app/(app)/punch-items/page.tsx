@@ -6,6 +6,7 @@ import { PageContainer, PageHeader } from "@/components/ui/PageContainer";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select, Textarea } from "@/components/ui/Field";
+import { PaginationControls } from "@/components/ui/PaginationControls";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/ui/States";
 import {
   listAllPunchItems,
@@ -49,6 +50,7 @@ interface PunchEditForm {
  * and contractor. Clicking an item opens a details editor on this screen.
  */
 export default function PunchItemsPage() {
+  const PAGE_SIZE = 25;
   const { canManage } = useAuth();
   const [items, setItems] = useState<PunchItem[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -60,6 +62,7 @@ export default function PunchItemsPage() {
   const [projectId, setProjectId] = useState("");
   const [status, setStatus] = useState<"" | PunchItemStatus>("");
   const [contractorId, setContractorId] = useState("");
+  const [page, setPage] = useState(1);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [edit, setEdit] = useState<PunchEditForm | null>(null);
@@ -112,6 +115,15 @@ export default function PunchItemsPage() {
       }),
     [items, projectId, status, contractorId],
   );
+
+  useEffect(() => {
+    setPage(1);
+  }, [projectId, status, contractorId]);
+
+  const pagedItems = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return visibleItems.slice(start, start + PAGE_SIZE);
+  }, [page, visibleItems]);
 
   const selectedItem = useMemo(
     () => items.find((item) => item.id === selectedId) ?? null,
@@ -420,7 +432,7 @@ export default function PunchItemsPage() {
         <Card>
           <CardBody className="p-0">
             <ul className="divide-y divide-ink-100">
-              {visibleItems.map((i) => {
+              {pagedItems.map((i) => {
                 const closed = i.status === "Resolved" || i.status === "Closed";
                 const crew = i.assigned_contractor_id
                   ? (contractorNames.get(i.assigned_contractor_id) ?? null)
@@ -471,6 +483,16 @@ export default function PunchItemsPage() {
             </ul>
           </CardBody>
         </Card>
+      )}
+
+      {!loading && !error && visibleItems.length > 0 && (
+        <PaginationControls
+          page={page}
+          pageSize={PAGE_SIZE}
+          totalItems={visibleItems.length}
+          label="punch items"
+          onPageChange={setPage}
+        />
       )}
     </PageContainer>
   );
