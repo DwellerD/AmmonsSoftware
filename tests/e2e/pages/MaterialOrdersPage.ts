@@ -18,6 +18,53 @@ export class MaterialOrdersPage {
     ).toBeVisible();
   }
 
+  async createMaterialOrder(input: {
+    projectName: string;
+    materialName: string;
+    supplier?: string;
+  }): Promise<void> {
+    await this.page.goto("/material-orders/new");
+    await expect(
+      this.page.getByRole("heading", { name: "New material order", level: 1 }),
+    ).toBeVisible();
+    await this.page.locator("#project_id").selectOption({ label: input.projectName });
+    await this.page.locator("#name").fill(input.materialName);
+    if (input.supplier) await this.page.locator("#supplier").fill(input.supplier);
+    await this.page.locator("#status").selectOption({ label: "Arriving" });
+    await this.page.getByRole("button", { name: "Create material order" }).click();
+    await expect(
+      this.page.getByText(`Material order "${input.materialName}" was created.`),
+    ).toBeVisible();
+  }
+
+  async openMaterial(name: string): Promise<void> {
+    await this.goto();
+    await this.row(name).getByRole("button").click();
+    await expect(this.page.locator("#material-detail-name")).toHaveValue(name);
+  }
+
+  async generateReceiptUploadLink(): Promise<string> {
+    await this.page.getByRole("button", { name: "Generate upload link" }).click();
+    const input = this.page.locator("#receipt-upload-link");
+    await expect(input).toBeVisible();
+    return input.inputValue();
+  }
+
+  async expectPendingVerification(): Promise<void> {
+    await expect(this.page.locator("#material-detail-status")).toHaveValue(
+      "Pending Verification",
+    );
+    await expect(
+      this.page.getByText("Delivery photos are ready for GC verification."),
+    ).toBeVisible();
+    await expect(this.page.getByAltText("Delivery receipt 1")).toBeVisible();
+  }
+
+  async markReceiptReceived(): Promise<void> {
+    await this.page.getByRole("button", { name: "Mark Received" }).click();
+    await expect(this.page.locator("#material-detail-status")).toHaveValue("Received");
+  }
+
   /** Narrow the list to a single status. */
   async filterByStatus(status: string): Promise<void> {
     await this.page

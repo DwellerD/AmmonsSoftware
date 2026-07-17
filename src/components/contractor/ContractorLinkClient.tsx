@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { FirebaseError } from "firebase/app";
 import { ScheduleConfirmationAction } from "@/components/contractor/ScheduleConfirmationAction";
+import { MaterialReceiptUploadAction } from "@/components/contractor/MaterialReceiptUploadAction";
 // FUTURE FEATURE:
 // The contractor Punch Item Update flow is disabled for the current MVP (no
 // contractor self-service). The component and its data helper are preserved for
@@ -93,7 +94,6 @@ export function ContractorLinkClient({ token }: { token: string }) {
         return;
       }
       try {
-        await ensureAnonymousSession();
         const found = await getActionLinkByToken(token);
         if (!active) return;
 
@@ -106,7 +106,18 @@ export function ContractorLinkClient({ token }: { token: string }) {
         const link = found as ContractorActionLink;
         setLink(link);
 
-        if (link.action_type === "Schedule Confirmation") {
+        if (link.action_type === "Material Receipt Upload") {
+          const match = validateActionLink(link, {
+            action: "Material Receipt Upload",
+            entityId: link.related_entity_id,
+            projectId: link.project_id,
+          });
+          if (!match.ok) {
+            setError(match.reason);
+            return;
+          }
+        } else if (link.action_type === "Schedule Confirmation") {
+          await ensureAnonymousSession();
           const p = await getTradePhase(link.related_entity_id);
           if (!active) return;
           if (!p) {
@@ -174,6 +185,8 @@ export function ContractorLinkClient({ token }: { token: string }) {
             </h1>
             <p className="text-sm text-ink-600">{ERROR_COPY[error].body}</p>
           </div>
+        ) : link && link.action_type === "Material Receipt Upload" ? (
+          <MaterialReceiptUploadAction link={link} />
         ) : link && link.action_type === "Schedule Confirmation" && phase ? (
           <div className="space-y-4">
             <h1 className="text-lg font-semibold text-ink-900">

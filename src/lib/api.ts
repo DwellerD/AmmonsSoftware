@@ -1,5 +1,6 @@
 import {
   addDoc,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -9,8 +10,10 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  Timestamp,
   updateDoc,
   where,
+  writeBatch,
   type DocumentData,
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
@@ -22,6 +25,10 @@ import {
   uploadBytesResumable,
 } from "firebase/storage";
 import { buildDocumentStoragePath } from "@/lib/documents";
+import {
+  MATERIAL_RECEIPT_MAX_FILE_BYTES,
+  MATERIAL_RECEIPT_MAX_PHOTOS,
+} from "@/lib/constants";
 import {
   defaultExpiration,
   entityTypeForAction,
@@ -43,6 +50,7 @@ import type {
   InspectionResult,
   MaterialOrder,
   MaterialOrderStatus,
+  MaterialReceiptUpload,
   Notification,
   NotificationDeliveryStatus,
   NotificationStatus,
@@ -95,6 +103,7 @@ const COLLECTIONS = {
   tradePhases: "tradePhases",
   activityLogs: "activityLogs",
   materialOrders: "materialOrders",
+  materialReceiptUploads: "materialReceiptUploads",
   completionRecords: "completionRecords",
   inspections: "inspections",
   punchItems: "punchItems",
@@ -1357,9 +1366,31 @@ function mapMaterialOrder(s: Snap): MaterialOrder {
     project_id: d.project_id,
     trade_phase_id: d.trade_phase_id ?? null,
     trade_id: d.trade_id ?? null,
+    receipt_upload_ids: Array.isArray(d.receipt_upload_ids)
+      ? d.receipt_upload_ids
+      : [],
+    latest_receipt_upload_id: d.latest_receipt_upload_id ?? null,
+    receipt_upload_token: d.receipt_upload_token ?? null,
     created_by: d.created_by ?? null,
     created_at: toIso(d.created_at),
     updated_at: toIso(d.updated_at),
+  };
+}
+
+function mapMaterialReceiptUpload(s: Snap): MaterialReceiptUpload {
+  const d = s.data();
+  return {
+    id: s.id,
+    material_order_id: d.material_order_id,
+    project_id: d.project_id,
+    action_link_token: d.action_link_token,
+    uploaded_by_name: d.uploaded_by_name ?? null,
+    notes: d.notes ?? null,
+    photo_urls: Array.isArray(d.photo_urls) ? d.photo_urls : [],
+    storage_paths: Array.isArray(d.storage_paths) ? d.storage_paths : [],
+    submitted_by: d.submitted_by ?? null,
+    submitted_at: toIso(d.submitted_at),
+    created_at: toIso(d.created_at),
   };
 }
 
@@ -1514,6 +1545,9 @@ export async function createMaterialOrder(
     project_id: input.project_id,
     trade_phase_id: input.trade_phase_id || null,
     trade_id: input.trade_id || null,
+    receipt_upload_ids: [],
+    latest_receipt_upload_id: null,
+    receipt_upload_token: null,
     created_by: uid(),
     created_at: serverTimestamp(),
     updated_at: serverTimestamp(),
@@ -1628,6 +1662,187 @@ export async function updateMaterialOrderStatus(
     });
   }
   return order;
+}
+
+/** Lists receipt submissions for one material order, newest first. */
+export async function listMaterialReceiptUploads(
+  materialOrderId: string,
+): Promise<MaterialReceiptUpload[]> {
+  const order = await getMaterialOrder(materialOrderId);
+  if (!order) return [];
+  await requireProjectPermission(order.project_id, "can_view_material_orders");
+  const receipts = await listForProject(
+    COLLECTIONS.materialReceiptUploads,
+    order.project_id,
+  );
+  return receipts
+    .map(mapMaterialReceiptUpload)
+    .filter((receipt) => receipt.material_order_id === materialOrderId)
+    .sort((a, b) => (a.submitted_at < b.submitted_at ? 1 : -1));
+}
+
+/** Creates or reuses a one-time receipt-photo upload link for an order. */
+export async function createMaterialReceiptUploadLink(
+  materialOrderId: string,
+): Promise<ContractorActionLink> {
+  const order = await getMaterialOrder(materialOrderId);
+  if (!order) throw new Error("Material order not found.");
+  await requireProjectPermission(order.project_id, "can_edit_material_orders");
+
+  const existing = await listActionLinks({
+    projectId: order.project_id,
+    relatedEntityId: order.id,
+    actionType: "Material Receipt Upload",
+    status: "Active",
+  });
+  if (existing[0] && !isActionLinkExpired(existing[0])) return existing[0];
+
+  const project = await getProject(order.project_id);
+  const token = generateActionToken();
+  const expirationDate = defaultExpiration();
+  const linkRef = doc(getDb(), COLLECTIONS.contractorActionLinks, token);
+  const orderRef = doc(getDb(), COLLECTIONS.materialOrders, order.id);
+  const batch = writeBatch(getDb());
+  batch.set(linkRef, {
+    created_by: requireUid(),
+    token,
+    action_type: "Material Receipt Upload" as ActionLinkType,
+    related_entity_type: "material_order" as ActionLinkEntityType,
+    related_entity_id: order.id,
+    contractor_id: null,
+    project_id: order.project_id,
+    material_name: order.name,
+    supplier_name: order.supplier,
+    expected_arrival_date: order.expected_arrival_date,
+    project_name: project?.name ?? null,
+    expiration_date: expirationDate,
+    expiration_at: Timestamp.fromDate(new Date(expirationDate)),
+    used_at: null,
+    status: "Active" as ActionLinkStatus,
+    created_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+  });
+  batch.update(orderRef, {
+    receipt_upload_token: token,
+    updated_at: serverTimestamp(),
+  });
+  await batch.commit();
+  return mapActionLink((await getDoc(linkRef)) as Snap);
+}
+
+/** Uploads validated receipt photos to a token-scoped Storage location. */
+export async function uploadMaterialReceiptPhotos(
+  link: ContractorActionLink,
+  files: File[],
+): Promise<Array<{ photo_url: string; storage_path: string }>> {
+  if (files.length === 0) throw new Error("Add at least one delivery photo.");
+  if (files.length > MATERIAL_RECEIPT_MAX_PHOTOS) {
+    throw new Error(`Upload no more than ${MATERIAL_RECEIPT_MAX_PHOTOS} photos.`);
+  }
+  for (const file of files) {
+    if (!file.type.startsWith("image/")) {
+      throw new Error("Material receipt uploads must be image files.");
+    }
+    if (file.size > MATERIAL_RECEIPT_MAX_FILE_BYTES) {
+      throw new Error("Each photo must be 10 MB or smaller.");
+    }
+  }
+
+  const storage = getFirebaseStorage();
+  return Promise.all(
+    files.map(async (file, index) => {
+      const safeName = file.name.replace(/[^\w.\-]+/g, "_");
+      const storage_path = `material-receipts/${link.project_id}/${link.related_entity_id}/${link.token}/${Date.now()}-${index}-${safeName}`;
+      const fileRef = storageRef(storage, storage_path);
+      await uploadBytes(fileRef, file, { contentType: file.type });
+      return {
+        photo_url: await getDownloadURL(fileRef),
+        storage_path,
+      };
+    }),
+  );
+}
+
+export interface SubmitMaterialReceiptInput {
+  link: ContractorActionLink;
+  uploaded_by_name?: string;
+  notes?: string;
+  photos: Array<{ photo_url: string; storage_path: string }>;
+}
+
+/** Atomically records receipt proof, queues GC verification, and consumes the link. */
+export async function submitMaterialReceipt(
+  input: SubmitMaterialReceiptInput,
+): Promise<MaterialReceiptUpload> {
+  const freshLink = await getActionLinkByToken(input.link.token);
+  if (
+    !freshLink ||
+    freshLink.status !== "Active" ||
+    isActionLinkExpired(freshLink) ||
+    freshLink.action_type !== "Material Receipt Upload" ||
+    freshLink.related_entity_type !== "material_order" ||
+    input.photos.length === 0 ||
+    input.photos.length > MATERIAL_RECEIPT_MAX_PHOTOS
+  ) {
+    throw new Error("This receipt upload link is no longer active.");
+  }
+
+  const db = getDb();
+  const receiptRef = doc(collection(db, COLLECTIONS.materialReceiptUploads));
+  const orderRef = doc(db, COLLECTIONS.materialOrders, freshLink.related_entity_id);
+  const linkRef = doc(db, COLLECTIONS.contractorActionLinks, freshLink.token);
+  const activityRef = doc(collection(db, COLLECTIONS.activityLogs));
+  const submittedBy = uid();
+  const submittedAt = new Date().toISOString();
+  const batch = writeBatch(db);
+
+  batch.set(receiptRef, {
+    material_order_id: freshLink.related_entity_id,
+    project_id: freshLink.project_id,
+    action_link_token: freshLink.token,
+    uploaded_by_name: input.uploaded_by_name?.trim() || null,
+    notes: input.notes?.trim() || null,
+    photo_urls: input.photos.map((photo) => photo.photo_url),
+    storage_paths: input.photos.map((photo) => photo.storage_path),
+    submitted_by: submittedBy,
+    submitted_at: serverTimestamp(),
+    created_at: serverTimestamp(),
+  });
+  batch.update(orderRef, {
+    status: "Pending Verification" as MaterialOrderStatus,
+    receipt_upload_ids: arrayUnion(receiptRef.id),
+    latest_receipt_upload_id: receiptRef.id,
+    updated_at: serverTimestamp(),
+  });
+  batch.update(linkRef, {
+    status: "Used" as ActionLinkStatus,
+    used_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+  });
+  batch.set(activityRef, {
+    action_type: "material_receipt_submitted" as ActivityAction,
+    entity_type: "material_order",
+    entity_id: freshLink.related_entity_id,
+    project_id: freshLink.project_id,
+    user_id: submittedBy,
+    action_link_token: freshLink.token,
+    description: `Receipt photos submitted for ${freshLink.material_name ?? "material order"}`,
+    created_at: serverTimestamp(),
+  });
+  await batch.commit();
+  return {
+    id: receiptRef.id,
+    material_order_id: freshLink.related_entity_id,
+    project_id: freshLink.project_id,
+    action_link_token: freshLink.token,
+    uploaded_by_name: input.uploaded_by_name?.trim() || null,
+    notes: input.notes?.trim() || null,
+    photo_urls: input.photos.map((photo) => photo.photo_url),
+    storage_paths: input.photos.map((photo) => photo.storage_path),
+    submitted_by: submittedBy,
+    submitted_at: submittedAt,
+    created_at: submittedAt,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -2324,8 +2539,13 @@ function mapActionLink(s: Snap): ContractorActionLink {
     action_type: data.action_type as ActionLinkType,
     related_entity_type: data.related_entity_type as ActionLinkEntityType,
     related_entity_id: data.related_entity_id as string,
-    contractor_id: data.contractor_id as string,
+    contractor_id: (data.contractor_id as string | null) ?? null,
     project_id: data.project_id as string,
+    material_name: (data.material_name as string | null) ?? null,
+    supplier_name: (data.supplier_name as string | null) ?? null,
+    expected_arrival_date:
+      (data.expected_arrival_date as string | null) ?? null,
+    project_name: (data.project_name as string | null) ?? null,
     expiration_date: (data.expiration_date as string | null) ?? null,
     used_at: (data.used_at as string | null) ?? null,
     status: data.status as ActionLinkStatus,
@@ -2337,12 +2557,12 @@ function mapActionLink(s: Snap): ContractorActionLink {
 export interface NewActionLinkInput {
   action_type: ActionLinkType;
   related_entity_id: string;
-  contractor_id: string;
+  contractor_id: string | null;
   project_id: string;
   /** Optional explicit entity type; inferred from action_type when omitted. */
   related_entity_type?: ActionLinkEntityType;
   /** Optional explicit ISO expiry; defaults to the standard TTL when omitted. */
-  expiration_date?: string | null;
+  expiration_date?: string;
 }
 
 /**
@@ -2381,6 +2601,7 @@ export async function createActionLink(
   }
 
   const token = generateActionToken();
+  const expirationDate = input.expiration_date ?? defaultExpiration();
   const ref = doc(getDb(), COLLECTIONS.contractorActionLinks, token);
   await setDoc(ref, {
     created_by: userId,
@@ -2390,10 +2611,12 @@ export async function createActionLink(
     related_entity_id: input.related_entity_id,
     contractor_id: input.contractor_id,
     project_id: input.project_id,
-    expiration_date:
-      input.expiration_date === undefined
-        ? defaultExpiration()
-        : input.expiration_date,
+    expiration_date: expirationDate,
+    expiration_at: Timestamp.fromDate(new Date(expirationDate)),
+    material_name: null,
+    supplier_name: null,
+    expected_arrival_date: null,
+    project_name: null,
     used_at: null,
     status: "Active" as ActionLinkStatus,
     created_at: serverTimestamp(),
@@ -2410,13 +2633,8 @@ export async function getActionLinkByToken(
   const snap = await getDoc(ref);
   if (!snap.exists()) return null;
   const link = mapActionLink(snap as Snap);
-  if (link.status === "Active" && isActionLinkExpired(link)) {
-    await updateDoc(ref, {
-      status: "Expired" as ActionLinkStatus,
-      updated_at: serverTimestamp(),
-    });
+  if (link.status === "Active" && isActionLinkExpired(link))
     return { ...link, status: "Expired" };
-  }
   return link;
 }
 

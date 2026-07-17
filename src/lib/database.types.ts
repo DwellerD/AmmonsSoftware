@@ -31,6 +31,7 @@ export type ActivityAction =
   | "trade_phase_status_updated"
   | "material_order_added"
   | "material_order_status_updated"
+  | "material_receipt_submitted"
   | "completion_submitted"
   | "inspection_recorded"
   | "punch_item_created"
@@ -48,7 +49,9 @@ export type MaterialOrderStatus =
   | "Needed"
   | "Ordered"
   | "Arriving"
+  | "Pending Verification"
   | "Received"
+  | "Issue Found"
   | "Delayed"
   | "Cancelled";
 
@@ -253,9 +256,27 @@ export interface MaterialOrder {
   project_id: string;
   trade_phase_id: string | null;
   trade_id: string | null;
+  receipt_upload_ids: string[];
+  latest_receipt_upload_id: string | null;
+  receipt_upload_token: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Delivery photos submitted through a one-time material receipt link. */
+export interface MaterialReceiptUpload {
+  id: string;
+  material_order_id: string;
+  project_id: string;
+  action_link_token: string;
+  uploaded_by_name: string | null;
+  notes: string | null;
+  photo_urls: string[];
+  storage_paths: string[];
+  submitted_by: string | null;
+  submitted_at: string;
+  created_at: string;
 }
 
 /** Proof that work on a trade phase is complete: notes + photos in Storage. */
@@ -404,6 +425,7 @@ export interface ProjectDocument {
 /** The action a contractor link grants. */
 export type ActionLinkType =
   | "Schedule Confirmation"
+  | "Material Receipt Upload"
   | "Completion Submission"
   | "Punch Item Update"
   | "Document Request";
@@ -414,6 +436,7 @@ export type ActionLinkStatus = "Active" | "Used" | "Expired" | "Revoked";
 /** The kind of entity a link points at. */
 export type ActionLinkEntityType =
   | "trade_phase"
+  | "material_order"
   | "punch_item"
   | "completion_record"
   | "document_request";
@@ -430,8 +453,12 @@ export interface ContractorActionLink {
   action_type: ActionLinkType;
   related_entity_type: ActionLinkEntityType;
   related_entity_id: string;
-  contractor_id: string;
+  contractor_id: string | null;
   project_id: string;
+  material_name: string | null;
+  supplier_name: string | null;
+  expected_arrival_date: string | null;
+  project_name: string | null;
   /** ISO date after which the link is no longer valid (null = never expires). */
   expiration_date: string | null;
   /** When the link was first used to complete its action (null until used). */

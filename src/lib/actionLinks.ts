@@ -86,6 +86,8 @@ export function entityTypeForAction(
   switch (action) {
     case "Schedule Confirmation":
       return "trade_phase";
+    case "Material Receipt Upload":
+      return "material_order";
     case "Completion Submission":
       return "completion_record";
     case "Punch Item Update":

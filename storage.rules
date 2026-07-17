@@ -2,10 +2,9 @@ rules_version = '2';
 
 // Firebase Storage security rules for PhaseBinder.
 //
-// MVP policy: any signed-in user can read and write project files. This keeps
-// the contractor completion-photo upload flow simple while still requiring
-// authentication. Tighten before production (e.g. per-project membership,
-// content-type and size limits, role checks).
+// Project files require authentication. Material receipt uploads are the one
+// exception: a valid one-time bearer token grants create-only access to its
+// exact project/order/token path.
 service firebase.storage {
   match /b/{bucket}/o {
 
@@ -29,9 +28,32 @@ service firebase.storage {
         && request.resource.size < 25 * 1024 * 1024;
     }
 
-    // Any other authenticated read/write (future use).
+    // One-time material receipt photos. The token path must resolve to an
+    // active, unexpired link for this exact project and material order.
+    match /material-receipts/{projectId}/{materialOrderId}/{token}/{fileName} {
+      allow read: if request.auth != null || (
+        firestore.exists(/databases/(default)/documents/contractorActionLinks/$(token))
+        && firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.action_type == 'Material Receipt Upload'
+        && firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.related_entity_id == materialOrderId
+        && firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.project_id == projectId
+        && firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.status == 'Active'
+        && firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.expiration_at > request.time
+      );
+      allow create: if request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*')
+        && firestore.exists(/databases/(default)/documents/contractorActionLinks/$(token))
+        && firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.action_type == 'Material Receipt Upload'
+        && firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.related_entity_id == materialOrderId
+        && firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.project_id == projectId
+        && firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.status == 'Active'
+        && firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.expiration_at > request.time;
+      allow update, delete: if false;
+    }
+
+    // No fallback writes: every upload location must have an explicit policy.
     match /{allPaths=**} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null;
+      allow write: if false;
     }
   }
 }

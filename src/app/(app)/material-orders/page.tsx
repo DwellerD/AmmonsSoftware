@@ -8,6 +8,7 @@ import { Card, CardBody } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select, Textarea } from "@/components/ui/Field";
 import { PaginationControls } from "@/components/ui/PaginationControls";
+import { MaterialReceiptPanel } from "@/components/materials/MaterialReceiptPanel";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/ui/States";
 import {
   listMaterialOrders,
@@ -382,6 +383,21 @@ export default function MaterialOrdersPage() {
                   Save material details
                 </Button>
               )}
+
+              <MaterialReceiptPanel
+                order={selectedOrder}
+                canManage={canManage}
+                onStatusChange={(updated) => {
+                  setOrders((prev) =>
+                    prev.map((order) =>
+                      order.id === updated.id ? updated : order,
+                    ),
+                  );
+                  setEdit((prev) =>
+                    prev ? { ...prev, status: updated.status } : prev,
+                  );
+                }}
+              />
             </form>
           </CardBody>
         </Card>

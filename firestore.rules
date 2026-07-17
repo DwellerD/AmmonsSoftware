@@ -33,6 +33,50 @@ service cloud.firestore {
       return /databases/$(database)/documents/projectInvites/$(token);
     }
 
+    function actionLinkPath(token) {
+      return /databases/$(database)/documents/contractorActionLinks/$(token);
+    }
+
+    function materialReceiptPath(receiptId) {
+      return /databases/$(database)/documents/materialReceiptUploads/$(receiptId);
+    }
+
+    function validMaterialReceiptLink(token, materialOrderId, projectId) {
+      return token != null &&
+        exists(actionLinkPath(token)) &&
+        get(actionLinkPath(token)).data.action_type == 'Material Receipt Upload' &&
+        get(actionLinkPath(token)).data.related_entity_type == 'material_order' &&
+        get(actionLinkPath(token)).data.related_entity_id == materialOrderId &&
+        get(actionLinkPath(token)).data.project_id == projectId &&
+        get(actionLinkPath(token)).data.status == 'Active' &&
+        get(actionLinkPath(token)).data.expiration_at > request.time;
+    }
+
+    function validMaterialReceiptOrderUpdate(orderId) {
+      let receiptId = request.resource.data.latest_receipt_upload_id;
+      let receipt = getAfter(materialReceiptPath(receiptId)).data;
+      return validMaterialReceiptLink(
+          resource.data.receipt_upload_token,
+          orderId,
+          resource.data.project_id
+        ) &&
+        existsAfter(materialReceiptPath(receiptId)) &&
+        receipt.material_order_id == orderId &&
+        receipt.project_id == resource.data.project_id &&
+        receipt.action_link_token == resource.data.receipt_upload_token &&
+        request.resource.data.status == 'Pending Verification' &&
+        request.resource.data.receipt_upload_ids.size() ==
+          resource.data.receipt_upload_ids.size() + 1 &&
+        request.resource.data.receipt_upload_ids.hasAll(resource.data.receipt_upload_ids) &&
+        receiptId in request.resource.data.receipt_upload_ids &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'status',
+          'receipt_upload_ids',
+          'latest_receipt_upload_id',
+          'updated_at'
+        ]);
+    }
+
     function hasProjectAccess(projectId) {
       return projectOwner(projectId) ||
         (signedIn() && exists(projectAccessPath(projectId, request.auth.uid)));
@@ -251,17 +295,56 @@ service cloud.firestore {
       allow read: if canViewSection(resource.data.project_id, 'can_view_activity') ||
         canEditSection(resource.data.project_id, 'can_edit_activity') ||
         ownsResource('user_id');
-      allow create: if createsOwned('user_id');
+      allow create: if createsOwned('user_id') || (
+        request.resource.data.action_type == 'material_receipt_submitted' &&
+        validMaterialReceiptLink(
+          request.resource.data.action_link_token,
+          request.resource.data.entity_id,
+          request.resource.data.project_id
+        ) &&
+        (
+          (!signedIn() && request.resource.data.user_id == null) ||
+          (signedIn() && request.resource.data.user_id == request.auth.uid)
+        )
+      );
       allow update, delete: if false;
     }
 
     match /materialOrders/{orderId} {
       allow read: if canViewSection(resource.data.project_id, 'can_view_material_orders') ||
         canEditSection(resource.data.project_id, 'can_edit_material_orders');
-      allow update, delete: if canEditSection(resource.data.project_id, 'can_edit_material_orders');
+      allow update: if canEditSection(resource.data.project_id, 'can_edit_material_orders') ||
+        validMaterialReceiptOrderUpdate(orderId);
+      allow delete: if canEditSection(resource.data.project_id, 'can_edit_material_orders');
       allow create: if signedIn() &&
         request.resource.data.created_by == request.auth.uid &&
         canEditSection(request.resource.data.project_id, 'can_edit_material_orders');
+    }
+
+    match /materialReceiptUploads/{receiptId} {
+      allow read: if canViewSection(resource.data.project_id, 'can_view_material_orders') ||
+        canEditSection(resource.data.project_id, 'can_edit_material_orders') ||
+        ownsResource('submitted_by');
+      allow create: if (
+          (!signedIn() && request.resource.data.submitted_by == null) ||
+          (signedIn() && request.resource.data.submitted_by == request.auth.uid)
+        ) &&
+        validMaterialReceiptLink(
+          request.resource.data.action_link_token,
+          request.resource.data.material_order_id,
+          request.resource.data.project_id
+        ) &&
+        request.resource.data.photo_urls is list &&
+        request.resource.data.storage_paths is list &&
+        request.resource.data.photo_urls.size() > 0 &&
+        request.resource.data.photo_urls.size() <= 6 &&
+        request.resource.data.storage_paths.size() == request.resource.data.photo_urls.size() &&
+        (request.resource.data.uploaded_by_name == null ||
+          request.resource.data.uploaded_by_name.size() <= 100) &&
+        (request.resource.data.notes == null || request.resource.data.notes.size() <= 1000) &&
+        request.resource.data.submitted_at == request.time &&
+        request.resource.data.created_at == request.time;
+      allow update, delete: if false;
     }
 
     match /punchItems/{punchItemId} {
@@ -308,13 +391,28 @@ service cloud.firestore {
         canEditSection(request.resource.data.project_id, 'can_edit_documents');
     }
 
-    // Tokenized links: direct doc get stays public-by-token; management is
-    // owner-only.
+    // Tokenized links: direct doc get stays public-by-token. Owners manage
+    // links; a valid receipt token may only consume its own one-time link.
     match /contractorActionLinks/{token} {
       allow get: if true;
-      allow list, update: if ownsResource('created_by');
+      allow list: if ownsResource('created_by');
+      allow update: if ownsResource('created_by') || (
+        validMaterialReceiptLink(token, resource.data.related_entity_id, resource.data.project_id) &&
+        request.resource.data.status == 'Used' &&
+        request.resource.data.used_at == request.time &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'status', 'used_at', 'updated_at'
+        ])
+      );
       allow create: if createsOwned('created_by') &&
-        canEditSection(request.resource.data.project_id, 'can_edit_trade_phases');
+        (
+          (
+            request.resource.data.action_type == 'Material Receipt Upload' &&
+            request.resource.data.related_entity_type == 'material_order' &&
+            canEditSection(request.resource.data.project_id, 'can_edit_material_orders')
+          ) ||
+          canEditSection(request.resource.data.project_id, 'can_edit_trade_phases')
+        );
       allow delete: if false;
     }
   }

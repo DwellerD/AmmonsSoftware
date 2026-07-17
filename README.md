@@ -236,30 +236,51 @@ notifications), but budget alerts are still your first operational safety net.
   `storage.rules` allow signed-in users to read, restrict completion-photo
   uploads to image files up to 15 MB, and restrict document uploads to any file
   type up to 25 MB.
-- **Contractor action links (schedule confirmation only)** — instead of giving
-  subcontractors full accounts, the GC generates a tokenized link for a single
-  action. In the current MVP this is used for **schedule confirmation**: the
+- **Scoped action links** — instead of giving external recipients full
+  accounts, the GC generates a tokenized link for one action. In the current
+  MVP these links support **schedule confirmation** and **material receipt
+  photo upload**. For schedule confirmation, the
   token doubles as the Firestore document id so an unauthenticated visitor can
   fetch exactly one link by URL; `actionLinks.ts` generates, validates, and
   expires it (status `Active` → `Used` / `Expired` / `Revoked`, default 14-day
-  TTL). The public screen confirms the schedule against the expected phase and
-  marks the link used. *Other action-link types (punch update, document
+  TTL). The public screen validates the expected entity and marks the link
+  used after submission. *Other action-link types (punch update, document
   request, completion submission) are scaffolded but disabled — see below.*
+- **Material receipt verification links** — from Material tracking, open an
+  order and generate a one-time upload link for manual sharing by text or
+  email. The receiver sees only a safe order summary and can submit up to six
+  images (10 MB each), plus an optional name and note. Submission stores photos
+  under `material-receipts/{projectId}/{materialOrderId}/{token}/`, creates a
+  `materialReceiptUploads` record, moves the order to `Pending Verification`,
+  consumes the link, and appends an activity entry. The GC reviews the photos
+  and marks the order `Received` or `Issue Found`.
 - **Internal notification records** — `notifications.ts` records a Firestore
   `notifications` document for key workflow events (`dispatchNotification`) so
   they appear in history. **No email/SMS/push is sent.** The email/SMS
   “prepare” helpers are preserved as a future seam but are not called. There is
   no automated messaging in this build.
-- **Security rules** — `firestore.rules` restricts collections to signed-in
-  users (users only write their own profile; activity logs are append-only;
-  inspections are create-only). `contractorActionLinks` allow an unauthenticated
-  `get` by token (so a contractor can open their schedule-confirmation link) but
-  restrict listing and writes to signed-in users. `storage.rules` similarly gate
-  uploads to signed-in users. Project-scoped restrictions are planned for a
-  later sprint.
+- **Security rules** — `firestore.rules` enforce project-scoped access for GC
+  data. Action-link documents allow direct token lookup; a valid material
+  receipt token can create one scoped receipt, move only its material order to
+  `Pending Verification`, append one activity record, and consume itself.
+  `storage.rules` require authentication for normal files and grant receipt
+  tokens create-only access to their exact image path.
 - **Route protection** — auth is client-side. The `(app)` layout is a client
   component that waits for auth state, then redirects unauthenticated visitors
   to `/login`.
+
+### Material receipt security assumptions
+
+- Receipt upload URLs are bearer tokens: anyone with the link can use it until
+  it is used, revoked, or expires after 14 days. Share them only with the
+  intended receiver.
+- Receivers do not need PhaseBinder or Firebase accounts. Firestore and Storage
+  rules authorize only the token's exact project/material path and restrict
+  submission to the `Pending Verification` transition.
+- A link is one-time use, but uploaded files may remain in Storage if a network
+  failure occurs before the final Firestore batch. Automatic cleanup is outside
+  this focused MVP.
+- Receipt files are images only, limited to six files and 10 MB per file.
 
 ---
 

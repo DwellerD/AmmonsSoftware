@@ -101,7 +101,9 @@ export const MATERIAL_ORDER_STATUSES: MaterialOrderStatus[] = [
   "Needed",
   "Ordered",
   "Arriving",
+  "Pending Verification",
   "Received",
+  "Issue Found",
   "Delayed",
   "Cancelled",
 ];
@@ -110,7 +112,9 @@ export const MATERIAL_ORDER_STATUS_STYLES: Record<MaterialOrderStatus, string> =
   Needed: "bg-ink-100 text-ink-700",
   Ordered: "bg-sky-100 text-sky-800",
   Arriving: "bg-indigo-100 text-indigo-800",
+  "Pending Verification": "bg-violet-100 text-violet-800",
   Received: "bg-green-100 text-green-800",
+  "Issue Found": "bg-red-100 text-red-800",
   Delayed: "bg-amber-100 text-amber-800",
   Cancelled: "bg-ink-200 text-ink-500",
 };
@@ -244,6 +248,7 @@ export const PINNABLE_PLAN_TYPES: DocumentType[] = ["Blueprint", "Layout"];
  */
 export const ACTION_LINK_TYPES: ActionLinkType[] = [
   "Schedule Confirmation",
+  "Material Receipt Upload",
   // "Completion Submission",
   // "Punch Item Update",
   // "Document Request",
@@ -267,3 +272,7 @@ export const ACTION_LINK_STATUS_STYLES: Record<ActionLinkStatus, string> = {
 
 /** Default number of days before a generated action link expires. */
 export const ACTION_LINK_DEFAULT_TTL_DAYS = 14;
+
+/** Material receipt upload limits enforced in both UI helpers and Storage rules. */
+export const MATERIAL_RECEIPT_MAX_PHOTOS = 6;
+export const MATERIAL_RECEIPT_MAX_FILE_BYTES = 10 * 1024 * 1024;
