@@ -35,6 +35,10 @@ export async function runInviteAcceptEditAndRemoveFlow(
   await projects.createProject(projectName);
   await projects.openProject(projectName);
   await projectDetail.expectLoaded(projectName);
+  await projectDetail.expectOwnerWorkspaceTabs();
+  await projectDetail.expectPunchListKeepsProjectContext();
+  await page.goBack();
+  await projectDetail.expectLoaded(projectName);
   const projectDetailUrl = page.url();
 
   const inviteUrl = await projectDetail.createInvite(
@@ -61,6 +65,7 @@ export async function runInviteAcceptEditAndRemoveFlow(
   await invitePage.expectInviteDetails(projectName, gcEmail);
   await invitePage.acceptInvite();
   await page.waitForURL(/\/projects\/[^/]+$/, { timeout: 30_000 });
+  await projectDetail.expectDefaultMemberWorkspaceTabs();
   await projectDetail.expectManageUsersHidden();
   await captureMilestone(page, testInfo, "Invitee accepted and opened project");
 
@@ -75,6 +80,20 @@ export async function runInviteAcceptEditAndRemoveFlow(
   await projectDetail.setDialogPermission("View material orders", true);
   await projectDetail.saveDialogAccess();
   await captureMilestone(page, testInfo, "Owner edited member access from edit modal");
+
+  await nav.signOut();
+
+  await loginPage.signIn(invitee.email, invitee.password);
+  await projects.expectProjectVisible(projectName);
+  await projects.openProject(projectName);
+  await projectDetail.expectMaterialMemberWorkspaceTabs();
+  await projectDetail.expectManageUsersHidden();
+  await captureMilestone(page, testInfo, "Invitee sees only newly granted project workspace tab");
+
+  await nav.signOut();
+
+  await loginPage.signInAsGc();
+  await projects.openProject(projectName);
 
   await projectDetail.openMemberManageDialog(invitee.email);
   await projectDetail.revokeAllAccessFromDialog();

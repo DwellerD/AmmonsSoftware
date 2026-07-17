@@ -8,7 +8,7 @@ export async function runMaterialReceiptVerificationTest(
   app: PhaseBinderApp,
   testInfo: TestInfo,
 ): Promise<void> {
-  const { loginPage, nav, projects, materialOrders, page } = app;
+  const { loginPage, nav, projects, projectDetail, materialOrders, page } = app;
   const projectName = uniqueName("Receipt project");
   const materialName = uniqueName("Window package");
 
@@ -19,6 +19,8 @@ export async function runMaterialReceiptVerificationTest(
     materialName,
     supplier: "Northwest Windows",
   });
+  await projects.openProject(projectName);
+  await projectDetail.expectMaterialVisible(materialName);
   await materialOrders.openMaterial(materialName);
   const uploadUrl = await materialOrders.generateReceiptUploadLink();
   await captureMilestone(page, testInfo, "GC generated receipt upload link");

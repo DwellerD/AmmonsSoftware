@@ -70,6 +70,10 @@ export default function PunchItemsPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    setProjectId(new URLSearchParams(window.location.search).get("projectId") ?? "");
+  }, []);
+
+  useEffect(() => {
     async function load() {
       setLoading(true);
       setError(null);

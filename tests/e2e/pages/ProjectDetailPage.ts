@@ -12,6 +12,49 @@ export class ProjectDetailPage {
     ).toBeVisible({ timeout: 30_000 });
   }
 
+  async expectOwnerWorkspaceTabs(): Promise<void> {
+    for (const name of [
+      "Overview",
+      "Trade phases",
+      "Materials",
+      "Punch list",
+      "Documents",
+    ]) {
+      await expect(this.page.getByRole("tab", { name: new RegExp(`^${name}`) })).toBeVisible();
+    }
+  }
+
+  async expectDefaultMemberWorkspaceTabs(): Promise<void> {
+    await expect(this.page.getByRole("tab", { name: "Overview" })).toBeVisible();
+    await expect(this.page.getByRole("tab", { name: /^Trade phases/ })).toBeVisible();
+    await expect(this.page.getByRole("tab", { name: /^Materials/ })).toHaveCount(0);
+    await expect(this.page.getByRole("tab", { name: /^Punch list/ })).toHaveCount(0);
+    await expect(this.page.getByRole("tab", { name: /^Documents/ })).toHaveCount(0);
+  }
+
+  async expectMaterialMemberWorkspaceTabs(): Promise<void> {
+    await expect(this.page.getByRole("tab", { name: "Overview" })).toBeVisible();
+    await expect(this.page.getByRole("tab", { name: /^Trade phases/ })).toBeVisible();
+    await expect(this.page.getByRole("tab", { name: /^Materials/ })).toBeVisible();
+    await expect(this.page.getByRole("tab", { name: /^Punch list/ })).toHaveCount(0);
+    await expect(this.page.getByRole("tab", { name: /^Documents/ })).toHaveCount(0);
+  }
+
+  async expectMaterialVisible(name: string): Promise<void> {
+    await this.page.getByRole("tab", { name: /^Materials/ }).click();
+    await expect(
+      this.page.locator("li").filter({ hasText: name }).getByRole("link"),
+    ).toBeVisible();
+  }
+
+  async expectPunchListKeepsProjectContext(): Promise<void> {
+    await this.page.getByRole("tab", { name: /^Punch list/ }).click();
+    await this.page.getByRole("link", { name: "Open full punch list" }).click();
+    await this.page.waitForURL(/\/punch-items\?projectId=.+/);
+    const projectId = new URL(this.page.url()).searchParams.get("projectId");
+    await expect(this.page.getByLabel("Filter by project")).toHaveValue(projectId ?? "");
+  }
+
   async createInvite(invitedEmail: string, message?: string): Promise<string> {
     await this.page.locator("#invite-email").fill(invitedEmail);
     if (message) {
