@@ -1,8 +1,10 @@
 # PhaseBinder
 
-PhaseBinder is a construction workflow app I built for general contractors and site supervisors. It puts project readiness, materials, inspections, punch work, documents, and participant access in one place so important job information does not stay scattered across texts and spreadsheets.
+I started PhaseBinder for my brother in law. He is a general contractor getting ready to manage five major projects with forty apartments total. Each building has eight apartments, which means a lot of trades, deliveries, inspections, punch work, photos, and documents need to stay organized at the same time.
 
-## Live project
+The goal is simple. I want him to open one project and quickly understand what is ready, what is blocked, what arrived, what needs review, and who has access to it.
+
+## Try PhaseBinder
 
 Live demo: https://phasebinder.com
 
@@ -10,43 +12,47 @@ Code: https://github.com/DwellerD/AmmonsSoftware
 
 Category: Work and Productivity
 
-## The problem
+No rebuild is needed. Judges can create a free account or use the dedicated test account included in the private Devpost testing instructions.
 
-A general contractor has to keep track of many trades, deliveries, inspections, and documents at the same time. A missed delivery or hidden punch item can hold up several people. PhaseBinder gives the contractor a clear view of each project and gives participants access only to the information they need.
+## Why I built it
+
+Construction information tends to get split between texts, calls, spreadsheets, photos, and paper notes. That works until several projects are moving at once. One late delivery or missed punch item can hold up a crew and affect the schedule around it.
+
+PhaseBinder puts that information into a project workspace that is easy to use from a phone or computer. It is meant to help a working general contractor keep the job moving, not add another complicated system to manage.
 
 ## What it does
 
-1. Creates and organizes construction projects.
+Each project has its own Overview, Trade Phases, Materials, Punch List, and Documents area. The Overview shows active work and anything that needs attention. The other sections keep the details inside the project where they belong.
 
-2. Tracks trades and trade phases from readiness through approval.
+Trade phases move from readiness through scheduling, completion, inspection, and approval. Material orders include suppliers, expected arrival dates, status, cost, tracking information, and notes. Delayed materials and open punch items are easy to spot.
 
-3. Tracks material orders, expected arrival dates, delays, and verified receipts.
+A project manager or participant with material editing permission can create a secure one time receipt link. The person receiving the delivery can open it without an account, upload photos and notes, and submit the delivery for review. The project manager checks the proof before marking the order as received or reporting an issue.
 
-4. Lets a receiver upload delivery photos through a secure one time link without creating an account.
+PhaseBinder also stores completion proof, inspections, punch items, project documents, and pinned plans. Project owners can invite participants and decide which parts of the project each person can view or edit.
 
-5. Lets the general contractor review delivery proof before marking material as received.
+## Project access
 
-6. Tracks completion proof, inspections, and punch items.
-
-7. Stores project documents and keeps important plans easy to find.
-
-8. Invites project participants and controls which project areas each person can see or edit.
-
-9. Gives every project its own workspace with Overview, Trade Phases, Materials, Punch List, and Documents.
-
-## Participant permissions
-
-Project access is enforced in the interface and in Firebase security rules. A participant only sees project tabs that match the permissions granted by the project owner. For example, a participant can receive access to Trade Phases and Materials without seeing Punch List, Documents, or user management.
+Project access is enforced in the interface and in Firestore security rules. A participant only sees the sections allowed by the project owner. For example, someone can receive access to Trade Phases and Materials without seeing Punch List, Documents, or user management.
 
 Removing a participant removes the project from their account and prevents direct access to the project address.
+
+## How I built it
+
+PhaseBinder is a responsive web application built with Next.js 16, React 19, TypeScript, Tailwind CSS, Firebase Authentication, Cloud Firestore, Cloud Storage, and Playwright.
+
+Firebase Authentication manages accounts. Cloud Firestore stores project and workflow records. Cloud Storage stores completion photos, receipt photos, and project documents.
+
+Firestore rules enforce project and section permissions. Firestore and Storage rules limit receipt submissions to the correct project, material order, and active link. The project workspace reads a participant's access before loading its sections, so it does not request information that person is not allowed to see.
+
+I used GitHub Copilot while developing and testing this project. It helped me inspect the existing code, plan changes, implement the receipt and project workspace flows, and build browser tests. I reviewed the changes and validated the final application with lint checks, production builds, and Playwright tests against Firebase.
 
 ## Work completed during the submission period
 
 PhaseBinder existed before the submission period. The work listed here was added on July 16 and July 17, 2026.
 
-1. I hardened project data access with bounded reads, duplicate protection, permission checks, safer account transitions, and improved Firebase cost controls.
+1. I tightened project data access with bounded reads, duplicate protection, permission checks, safer account transitions, and improved Firebase cost controls.
 
-2. I added secure material receipt verification. A contractor can create a limited upload link, a receiver can submit delivery photos, and the contractor can review the proof before accepting the delivery.
+2. I added material receipt verification. A project manager can create a limited upload link, a receiver can submit delivery photos, and the project manager can review the proof before accepting the delivery.
 
 3. I added a permission aware project workspace. Each project now brings its phases, materials, punch items, documents, plans, activity, and participant controls into one organized view.
 
@@ -77,10 +83,6 @@ No rebuild is needed.
 ## Supported platforms
 
 PhaseBinder is a responsive web application. It supports current versions of Chrome, Safari, Firefox, and Edge on desktop and mobile devices.
-
-## Technology
-
-PhaseBinder uses Next.js 16, React 19, TypeScript, Tailwind CSS, Firebase Authentication, Cloud Firestore, Cloud Storage, and Playwright.
 
 ## Run locally
 
@@ -116,7 +118,7 @@ The browser tests use a live Firebase test account configured through the ignore
 
 ## Security
 
-Local environment values and Firebase service account files are ignored by Git. Firestore and Storage rules enforce project access, scoped receipt uploads, file limits, token expiration, and one time use.
+Local environment values and Firebase service account files are ignored by Git. Firestore rules enforce project access. Firestore and Storage rules protect receipt uploads with file limits, expiration, and one time use.
 
 ## License
 
