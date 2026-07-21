@@ -21,7 +21,8 @@ export async function runMaterialReceiptVerificationTest(
   });
   await projects.openProject(projectName);
   await projectDetail.expectMaterialVisible(materialName);
-  await materialOrders.openMaterial(materialName);
+  await projectDetail.openMaterial(materialName);
+  const materialDetailUrl = page.url();
   const uploadUrl = await materialOrders.generateReceiptUploadLink();
   await captureMilestone(page, testInfo, "GC generated receipt upload link");
 
@@ -37,7 +38,7 @@ export async function runMaterialReceiptVerificationTest(
   await captureMilestone(page, testInfo, "Receiver submitted delivery proof");
 
   await loginPage.signInAsGc();
-  await materialOrders.openMaterial(materialName);
+  await page.goto(materialDetailUrl);
   await materialOrders.expectPendingVerification();
   await materialOrders.markReceiptReceived();
   await captureMilestone(page, testInfo, "GC verified material receipt");

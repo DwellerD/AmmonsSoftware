@@ -44,11 +44,13 @@ Firebase Authentication manages accounts. Cloud Firestore stores project and wor
 
 Firestore rules enforce project and section permissions. Firestore and Storage rules limit receipt submissions to the correct project, material order, and active link. The project workspace reads a participant's access before loading its sections, so it does not request information that person is not allowed to see.
 
-I used GitHub Copilot while developing and testing this project. It helped me inspect the existing code, plan changes, implement the receipt and project workspace flows, and build browser tests. I reviewed the changes and validated the final application with lint checks, production builds, and Playwright tests against Firebase.
+I developed most of the submission-period work in VS Code with GitHub Copilot Chat using GPT-5.6 Sol. It helped me inspect the existing code, plan changes, implement the receipt and project workspace flows, and build browser tests. I reviewed those changes and validated the application with lint checks, production builds, and Playwright tests against Firebase.
+
+Before submitting, I opened the same repository in the official Codex desktop app for a final release-candidate review. Codex traced the project permission model through the interface, Firestore, and Storage; checked the one-time receipt transaction; ran the full live browser suite; and made targeted fixes where the review found real security or judge-path problems. Those fixes prevent a participant from expanding their own invite permissions, apply project section permissions to stored files, enforce server-side invite expiration, and keep a project material link working even when the bounded global material list is full.
 
 ## Work completed during the submission period
 
-PhaseBinder existed before the submission period. The work listed here was added on July 16 and July 17, 2026.
+PhaseBinder existed before the submission period. The main product work listed below was added on July 16 and July 17, 2026, followed by the final Codex review and targeted hardening on July 21.
 
 1. I tightened project data access with bounded reads, duplicate protection, permission checks, safer account transitions, and improved Firebase cost controls.
 
@@ -58,7 +60,9 @@ PhaseBinder existed before the submission period. The work listed here was added
 
 4. I added live browser tests for owner access, participant access, permission changes, receipt verification, revocation, and project isolation.
 
-The dated commits that contain this work are `27e4f4a`, `74fa098`, and `411bb41`.
+5. In the final Codex review I closed participant self-escalation paths in Firebase rules, aligned stored project files with section permissions, verified the anonymous receipt batch and one-time replay protection in local emulators, and fixed direct material links after bounded collection reads.
+
+The dated commits that contain the main July 16–17 feature work are `27e4f4a`, `74fa098`, and `411bb41`.
 
 ## How judges can test it
 

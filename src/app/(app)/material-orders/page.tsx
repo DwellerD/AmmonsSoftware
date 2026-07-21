@@ -11,6 +11,7 @@ import { PaginationControls } from "@/components/ui/PaginationControls";
 import { MaterialReceiptPanel } from "@/components/materials/MaterialReceiptPanel";
 import { EmptyState, ErrorAlert, LoadingState } from "@/components/ui/States";
 import {
+  getMaterialOrder,
   listMaterialOrders,
   listProjects,
   listTrades,
@@ -72,12 +73,20 @@ export default function MaterialOrdersPage() {
       setLoading(true);
       setError(null);
       try {
-        const [o, p, t] = await Promise.all([
+        const queryMaterialId = searchParams.get("materialId");
+        const [o, p, t, linkedOrder] = await Promise.all([
           listMaterialOrders(),
           listProjects(),
           listTrades(),
+          queryMaterialId
+            ? getMaterialOrder(queryMaterialId).catch(() => null)
+            : Promise.resolve(null),
         ]);
-        setOrders(o);
+        const loadedOrders =
+          linkedOrder && !o.some((order) => order.id === linkedOrder.id)
+            ? [linkedOrder, ...o]
+            : o;
+        setOrders(loadedOrders);
         setProjects(p);
         setTrades(t);
 
@@ -89,8 +98,10 @@ export default function MaterialOrdersPage() {
           setStatus(queryStatus as MaterialOrderStatus);
         }
 
-        const queryMaterialId = searchParams.get("materialId");
-        if (queryMaterialId && o.some((order) => order.id === queryMaterialId)) {
+        if (
+          queryMaterialId &&
+          loadedOrders.some((order) => order.id === queryMaterialId)
+        ) {
           setSelectedId(queryMaterialId);
         }
       } catch (err) {

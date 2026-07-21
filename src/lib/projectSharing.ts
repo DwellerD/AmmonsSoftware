@@ -121,12 +121,6 @@ export const PROJECT_PERMISSION_OPTIONS: ProjectPermissionOption[] = [
   },
 ];
 
-const BASE_VIEW_FIELDS: ProjectPermissionField[] = [
-  "can_view_project",
-  "can_view_trades",
-  "can_view_trade_phases",
-];
-
 export function defaultProjectPermissions(): ProjectPermissionState {
   return permissionStateFromFields({
     can_view_project: true,
@@ -212,7 +206,7 @@ export function hasProjectViewAccess(
   permissions: Pick<ProjectPermissionState, ProjectPermissionField> | null | undefined,
 ): boolean {
   if (!permissions) return false;
-  return BASE_VIEW_FIELDS.some((field) => permissions[field]);
+  return PROJECT_PERMISSION_FIELDS.some((field) => permissions[field]);
 }
 
 export function canEditProjectSection(

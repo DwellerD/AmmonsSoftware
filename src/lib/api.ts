@@ -698,6 +698,7 @@ export async function createProjectInvite(
       project_name: input.project_name,
       message: inviteMessage,
       ...permissions,
+      expires_at: Timestamp.fromDate(new Date(defaultExpiration(14))),
       updated_at: serverTimestamp(),
     });
     return mapProjectInvite((await getDoc(pendingExisting.ref)) as Snap);
@@ -717,7 +718,7 @@ export async function createProjectInvite(
     invited_by_email: getFirebaseAuth().currentUser?.email ?? null,
     accepted_by: null,
     accepted_at: null,
-    expires_at: defaultExpiration(14),
+    expires_at: Timestamp.fromDate(new Date(defaultExpiration(14))),
     created_at: serverTimestamp(),
     updated_at: serverTimestamp(),
   });
@@ -1187,7 +1188,12 @@ export async function getTradePhase(
       `Project access check failed (${basePhase.project_id}): ${formatError(err)}`,
     );
   });
-  if (!access || !access.can_view_trade_phases) return null;
+  if (
+    !access ||
+    (!access.can_view_trade_phases && !access.can_edit_trade_phases)
+  ) {
+    return null;
+  }
   const phase = await applyAutomaticNeedsInspection(basePhase, todayIso());
 
   const [tradeRes, contractorRes, projectRes] = await Promise.allSettled([
@@ -2204,7 +2210,9 @@ export async function getPunchItem(id: string): Promise<PunchItem | null> {
   if (!snap.exists()) return null;
   const item = mapPunchItem(snap as Snap);
   const access = await getCurrentUserProjectAccess(item.project_id);
-  return access && access.can_view_punch_items ? item : null;
+  return access && (access.can_view_punch_items || access.can_edit_punch_items)
+    ? item
+    : null;
 }
 
 /**
@@ -2409,7 +2417,9 @@ export async function getDocument(
   if (!snap.exists()) return null;
   const document = mapDocument(snap as Snap);
   const access = await getCurrentUserProjectAccess(document.project_id);
-  return access && access.can_view_documents ? document : null;
+  return access && (access.can_view_documents || access.can_edit_documents)
+    ? document
+    : null;
 }
 
 /**

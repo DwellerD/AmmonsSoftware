@@ -5,16 +5,17 @@ capture labelled screenshots at each milestone — handy for a QA dashboard.
 
 ## Latest verified run
 
-- Full suite status: 10 passed, 1 skipped.
+- Full suite status: 15 passed, 1 skipped.
 - Skipped case: contractor role restriction remains intentionally `test.fixme`
   until a contractor portal exists.
-- Validation date: 2026-07-07.
+- Validation date: 2026-07-21.
 
 ## What is covered
 
 | Spec | Scenario |
 | --- | --- |
 | `material-delay-blocks-phase.spec.ts` | A material delay blocks a trade phase and surfaces on the dashboard + activity log |
+| `material-receipt-verification.spec.ts` | One-time receipt link → anonymous photo proof → GC verification |
 | `completion-proof-inspection.spec.ts` | Completion proof submitted → approved, plus the rejection (rework) path |
 | `document-vault-blueprint.spec.ts` | Upload, pin, and find a blueprint (vault top section, tag search, dashboard) |
 | `punch-item-lifecycle.spec.ts` | Create → assign → filter → Open → In Progress → Resolved, with open-count + activity checks |
@@ -136,4 +137,3 @@ screenshot for every test, and traces/videos are retained on failure.
   teardown; the unique tags keep runs from colliding, but the data persists.
 - **Seed dependency** — flows that create phases/documents need the demo project
   and at least one trade + contractor to exist (`npm run seed`).
-

@@ -47,6 +47,16 @@ export class ProjectDetailPage {
     ).toBeVisible();
   }
 
+  async openMaterial(name: string): Promise<void> {
+    await this.page.getByRole("tab", { name: /^Materials/ }).click();
+    await this.page
+      .locator("li")
+      .filter({ hasText: name })
+      .getByRole("link")
+      .click();
+    await expect(this.page.locator("#material-detail-name")).toHaveValue(name);
+  }
+
   async expectPunchListKeepsProjectContext(): Promise<void> {
     await this.page.getByRole("tab", { name: /^Punch list/ }).click();
     await this.page.getByRole("link", { name: "Open full punch list" }).click();

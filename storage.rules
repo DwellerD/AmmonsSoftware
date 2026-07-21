@@ -2,58 +2,130 @@ rules_version = '2';
 
 // Firebase Storage security rules for PhaseBinder.
 //
-// Project files require authentication. Material receipt uploads are the one
-// exception: a valid one-time bearer token grants create-only access to its
-// exact project/order/token path.
+// Project files use the same section permissions as Firestore. Material
+// receipt uploads are the one exception: a valid one-time bearer token grants
+// create-only access to its exact project/order/token path.
 service firebase.storage {
   match /b/{bucket}/o {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function projectAccessPath(projectId) {
+      return /databases/(default)/documents/projectAccess/$(projectId + '_' + request.auth.uid);
+    }
+
+    function projectPath(projectId) {
+      return /databases/(default)/documents/projects/$(projectId);
+    }
+
+    function hasProjectSectionAccess(projectId, viewField, editField) {
+      return signedIn() && (
+        (
+          firestore.exists(projectPath(projectId)) &&
+          firestore.get(projectPath(projectId)).data.created_by == request.auth.uid
+        ) ||
+        (
+          firestore.exists(projectAccessPath(projectId)) &&
+          (
+            firestore.get(projectAccessPath(projectId)).data[viewField] == true ||
+            firestore.get(projectAccessPath(projectId)).data[editField] == true
+          )
+        )
+      );
+    }
+
+    function hasProjectSectionEdit(projectId, editField) {
+      return signedIn() && (
+        (
+          firestore.exists(projectPath(projectId)) &&
+          firestore.get(projectPath(projectId)).data.created_by == request.auth.uid
+        ) ||
+        (
+          firestore.exists(projectAccessPath(projectId)) &&
+          firestore.get(projectAccessPath(projectId)).data[editField] == true
+        )
+      );
+    }
+
+    function phasePath(tradePhaseId) {
+      return /databases/(default)/documents/tradePhases/$(tradePhaseId);
+    }
+
+    function phaseAccessPath(tradePhaseId) {
+      return /databases/(default)/documents/projectAccess/$(firestore.get(phasePath(tradePhaseId)).data.project_id + '_' + request.auth.uid);
+    }
+
+    function hasTradePhaseFileAccess(tradePhaseId) {
+      return signedIn() &&
+        firestore.exists(phasePath(tradePhaseId)) &&
+        (
+          firestore.get(phasePath(tradePhaseId)).data.created_by == request.auth.uid ||
+          (
+            firestore.exists(phaseAccessPath(tradePhaseId)) &&
+            (
+              firestore.get(phaseAccessPath(tradePhaseId)).data.can_view_trade_phases == true ||
+              firestore.get(phaseAccessPath(tradePhaseId)).data.can_edit_trade_phases == true
+            )
+          )
+        );
+    }
+
+    function validMaterialReceiptLink(projectId, materialOrderId, token) {
+      return firestore.exists(/databases/(default)/documents/contractorActionLinks/$(token)) &&
+        firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.action_type == 'Material Receipt Upload' &&
+        firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.related_entity_type == 'material_order' &&
+        firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.related_entity_id == materialOrderId &&
+        firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.project_id == projectId &&
+        firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.status == 'Active' &&
+        firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.expiration_at > request.time;
+    }
 
     // Completion proof photos, organized by trade phase:
     //   completion/{tradePhaseId}/{fileName}
     match /completion/{tradePhaseId}/{fileName} {
-      allow read: if request.auth != null;
-      // Only allow reasonably-sized image uploads.
-      allow write: if request.auth != null
+      allow read: if hasTradePhaseFileAccess(tradePhaseId);
+      allow create: if hasTradePhaseFileAccess(tradePhaseId)
         && request.resource.size < 15 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
+      allow update, delete: if false;
     }
 
     // Project documents (Sprint 3 Document Vault), organized by project:
     //   documents/{projectId}/{fileName}
-    // Signed-in users can read; uploads are capped at 25 MB. Any file type is
-    // allowed (blueprints, PDFs, images, spreadsheets, etc.).
+    // Authorized project participants can read; editors can upload files up to
+    // 25 MB. Any file type is allowed (blueprints, PDFs, images, etc.).
     match /documents/{projectId}/{fileName} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null
+      allow read: if hasProjectSectionAccess(
+        projectId,
+        'can_view_documents',
+        'can_edit_documents'
+      );
+      allow create: if hasProjectSectionEdit(projectId, 'can_edit_documents')
         && request.resource.size < 25 * 1024 * 1024;
+      allow update, delete: if false;
     }
 
     // One-time material receipt photos. The token path must resolve to an
     // active, unexpired link for this exact project and material order.
     match /material-receipts/{projectId}/{materialOrderId}/{token}/{fileName} {
-      allow read: if request.auth != null || (
-        firestore.exists(/databases/(default)/documents/contractorActionLinks/$(token))
-        && firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.action_type == 'Material Receipt Upload'
-        && firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.related_entity_id == materialOrderId
-        && firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.project_id == projectId
-        && firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.status == 'Active'
-        && firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.expiration_at > request.time
-      );
+      allow read: if (
+          !signedIn() && validMaterialReceiptLink(projectId, materialOrderId, token)
+        ) || hasProjectSectionAccess(
+          projectId,
+          'can_view_material_orders',
+          'can_edit_material_orders'
+        );
       allow create: if request.resource.size < 10 * 1024 * 1024
         && request.resource.contentType.matches('image/.*')
-        && firestore.exists(/databases/(default)/documents/contractorActionLinks/$(token))
-        && firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.action_type == 'Material Receipt Upload'
-        && firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.related_entity_id == materialOrderId
-        && firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.project_id == projectId
-        && firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.status == 'Active'
-        && firestore.get(/databases/(default)/documents/contractorActionLinks/$(token)).data.expiration_at > request.time;
+        && validMaterialReceiptLink(projectId, materialOrderId, token);
       allow update, delete: if false;
     }
 
-    // No fallback writes: every upload location must have an explicit policy.
+    // No fallback access: every file location must have an explicit policy.
     match /{allPaths=**} {
-      allow read: if request.auth != null;
-      allow write: if false;
+      allow read, write: if false;
     }
   }
 }

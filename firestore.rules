@@ -69,7 +69,7 @@ service cloud.firestore {
           resource.data.receipt_upload_ids.size() + 1 &&
         request.resource.data.receipt_upload_ids.hasAll(resource.data.receipt_upload_ids) &&
         receiptId in request.resource.data.receipt_upload_ids &&
-        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'status',
           'receipt_upload_ids',
           'latest_receipt_upload_id',
@@ -90,12 +90,19 @@ service cloud.firestore {
       return hasProjectAccess(projectId) && (
         projectOwner(projectId) ||
         accessDoc(projectId).can_view_project ||
+        accessDoc(projectId).can_edit_project ||
         accessDoc(projectId).can_view_trades ||
+        accessDoc(projectId).can_edit_trades ||
         accessDoc(projectId).can_view_trade_phases ||
+        accessDoc(projectId).can_edit_trade_phases ||
         accessDoc(projectId).can_view_material_orders ||
+        accessDoc(projectId).can_edit_material_orders ||
         accessDoc(projectId).can_view_punch_items ||
+        accessDoc(projectId).can_edit_punch_items ||
         accessDoc(projectId).can_view_documents ||
+        accessDoc(projectId).can_edit_documents ||
         accessDoc(projectId).can_view_activity ||
+        accessDoc(projectId).can_edit_activity ||
         accessDoc(projectId).can_manage_members
       );
     }
@@ -118,18 +125,174 @@ service cloud.firestore {
       );
     }
 
-    function inviteMatchesAccess(token) {
+    function validActionLinkCreate(token) {
+      return request.resource.data.token == token &&
+        request.resource.data.status == 'Active' &&
+        request.resource.data.used_at == null &&
+        request.resource.data.expiration_at is timestamp &&
+        request.resource.data.expiration_at > request.time &&
+        request.resource.data.created_at == request.time &&
+        request.resource.data.updated_at == request.time &&
+        (
+          (
+            request.resource.data.action_type == 'Material Receipt Upload' &&
+            request.resource.data.related_entity_type == 'material_order' &&
+            canEditSection(request.resource.data.project_id, 'can_edit_material_orders')
+          ) ||
+          (
+            request.resource.data.action_type != 'Material Receipt Upload' &&
+            canEditSection(request.resource.data.project_id, 'can_edit_project')
+          )
+        );
+    }
+
+    function validManagedActionLinkUpdate(token) {
+      return request.resource.data.token == token &&
+        request.resource.data.token == resource.data.token &&
+        request.resource.data.project_id == resource.data.project_id &&
+        request.resource.data.action_type == resource.data.action_type &&
+        request.resource.data.related_entity_type == resource.data.related_entity_type &&
+        request.resource.data.related_entity_id == resource.data.related_entity_id &&
+        request.resource.data.created_by == resource.data.created_by &&
+        request.resource.data.created_at == resource.data.created_at &&
+        request.resource.data.updated_at == request.time &&
+        request.resource.data.status in ['Used', 'Revoked', 'Expired'] &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'used_at', 'updated_at'
+        ]);
+    }
+
+    function validActionLinkUse(token) {
+      return resource.data.token == token &&
+        resource.data.status == 'Active' &&
+        resource.data.expiration_at > request.time &&
+        request.resource.data.status == 'Used' &&
+        request.resource.data.used_at != null &&
+        request.resource.data.updated_at == request.time &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'used_at', 'updated_at'
+        ]);
+    }
+
+    function inviteMatchesAccess(accessId, token) {
       return signedIn() &&
+        token != null &&
         exists(projectInvitePath(token)) &&
+        accessId == request.resource.data.project_id + '_' + request.auth.uid &&
         get(projectInvitePath(token)).data.project_id == request.resource.data.project_id &&
         get(projectInvitePath(token)).data.invited_email == request.auth.token.email &&
         get(projectInvitePath(token)).data.status == "Pending" &&
-        request.resource.data.invite_token == token;
+        get(projectInvitePath(token)).data.expires_at is timestamp &&
+        get(projectInvitePath(token)).data.expires_at > request.time &&
+        request.resource.data.invite_token == token &&
+        request.resource.data.user_id == request.auth.uid &&
+        request.resource.data.email == request.auth.token.email &&
+        request.resource.data.created_by == get(projectInvitePath(token)).data.invited_by &&
+        request.resource.data.can_view_project == get(projectInvitePath(token)).data.can_view_project &&
+        request.resource.data.can_edit_project == get(projectInvitePath(token)).data.can_edit_project &&
+        request.resource.data.can_view_trades == get(projectInvitePath(token)).data.can_view_trades &&
+        request.resource.data.can_edit_trades == get(projectInvitePath(token)).data.can_edit_trades &&
+        request.resource.data.can_view_trade_phases == get(projectInvitePath(token)).data.can_view_trade_phases &&
+        request.resource.data.can_edit_trade_phases == get(projectInvitePath(token)).data.can_edit_trade_phases &&
+        request.resource.data.can_view_material_orders == get(projectInvitePath(token)).data.can_view_material_orders &&
+        request.resource.data.can_edit_material_orders == get(projectInvitePath(token)).data.can_edit_material_orders &&
+        request.resource.data.can_view_punch_items == get(projectInvitePath(token)).data.can_view_punch_items &&
+        request.resource.data.can_edit_punch_items == get(projectInvitePath(token)).data.can_edit_punch_items &&
+        request.resource.data.can_view_documents == get(projectInvitePath(token)).data.can_view_documents &&
+        request.resource.data.can_edit_documents == get(projectInvitePath(token)).data.can_edit_documents &&
+        request.resource.data.can_view_activity == get(projectInvitePath(token)).data.can_view_activity &&
+        request.resource.data.can_edit_activity == get(projectInvitePath(token)).data.can_edit_activity &&
+        request.resource.data.can_manage_members == get(projectInvitePath(token)).data.can_manage_members &&
+        request.resource.data.created_at == request.time &&
+        request.resource.data.updated_at == request.time;
     }
 
-    function canCreateAccessFromInvite(projectId, token) {
-      return inviteMatchesAccess(token) &&
-        get(projectInvitePath(token)).data.project_id == projectId;
+    function validManagedAccessUpdate(accessId) {
+      return accessId == resource.data.project_id + '_' + resource.data.user_id &&
+        request.resource.data.project_id == resource.data.project_id &&
+        request.resource.data.user_id == resource.data.user_id &&
+        request.resource.data.created_at == resource.data.created_at &&
+        request.resource.data.updated_at == request.time &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'email',
+          'can_view_project',
+          'can_edit_project',
+          'can_view_trades',
+          'can_edit_trades',
+          'can_view_trade_phases',
+          'can_edit_trade_phases',
+          'can_view_material_orders',
+          'can_edit_material_orders',
+          'can_view_punch_items',
+          'can_edit_punch_items',
+          'can_view_documents',
+          'can_edit_documents',
+          'can_view_activity',
+          'can_edit_activity',
+          'can_manage_members',
+          'invite_token',
+          'created_by',
+          'updated_at'
+        ]);
+    }
+
+    function validInviteCreate(token) {
+      return request.resource.data.token == token &&
+        request.resource.data.invited_by == request.auth.uid &&
+        request.resource.data.status == 'Pending' &&
+        request.resource.data.accepted_by == null &&
+        request.resource.data.accepted_at == null &&
+        request.resource.data.expires_at is timestamp &&
+        request.resource.data.expires_at > request.time &&
+        request.resource.data.created_at == request.time &&
+        request.resource.data.updated_at == request.time;
+    }
+
+    function validManagedInviteUpdate() {
+      return resource.data.status == 'Pending' &&
+        request.resource.data.project_id == resource.data.project_id &&
+        request.resource.data.token == resource.data.token &&
+        request.resource.data.invited_email == resource.data.invited_email &&
+        request.resource.data.invited_by == resource.data.invited_by &&
+        request.resource.data.invited_by_email == resource.data.invited_by_email &&
+        request.resource.data.accepted_by == resource.data.accepted_by &&
+        request.resource.data.accepted_at == resource.data.accepted_at &&
+        request.resource.data.created_at == resource.data.created_at &&
+        request.resource.data.updated_at == request.time &&
+        request.resource.data.status in ['Pending', 'Revoked'] &&
+        (
+          (
+            request.resource.data.status == 'Pending' &&
+            request.resource.data.expires_at is timestamp &&
+            request.resource.data.expires_at > request.time
+          ) ||
+          (
+            request.resource.data.status == 'Revoked' &&
+            request.resource.data.expires_at == resource.data.expires_at
+          )
+        ) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'project_name',
+          'message',
+          'can_view_project',
+          'can_edit_project',
+          'can_view_trades',
+          'can_edit_trades',
+          'can_view_trade_phases',
+          'can_edit_trade_phases',
+          'can_view_material_orders',
+          'can_edit_material_orders',
+          'can_view_punch_items',
+          'can_edit_punch_items',
+          'can_view_documents',
+          'can_edit_documents',
+          'can_view_activity',
+          'can_edit_activity',
+          'can_manage_members',
+          'expires_at',
+          'status',
+          'updated_at'
+        ]);
     }
 
     function projectPath(projectId) {
@@ -179,16 +342,23 @@ service cloud.firestore {
       );
       allow create: if signedIn() && (
         (
+          accessId == request.resource.data.project_id + '_' + request.auth.uid &&
           request.resource.data.user_id == request.auth.uid &&
           request.resource.data.created_by == request.auth.uid &&
           request.resource.data.invite_token == null &&
+          request.resource.data.created_at == request.time &&
+          request.resource.data.updated_at == request.time &&
           projectOwner(request.resource.data.project_id)
         ) ||
-        canCreateAccessFromInvite(request.resource.data.project_id, request.resource.data.invite_token)
+        inviteMatchesAccess(accessId, request.resource.data.invite_token)
       );
       allow update: if signedIn() && (
-        canManageMembers(resource.data.project_id) ||
-        (request.auth.uid == resource.data.user_id && resource.data.invite_token == request.resource.data.invite_token)
+        (
+          canManageMembers(resource.data.project_id) &&
+          (projectOwner(resource.data.project_id) || resource.data.user_id != request.auth.uid) &&
+          validManagedAccessUpdate(accessId)
+        ) ||
+        inviteMatchesAccess(accessId, request.resource.data.invite_token)
       );
       allow delete: if signedIn() && (
         canManageMembers(resource.data.project_id) ||
@@ -199,12 +369,19 @@ service cloud.firestore {
     match /projectInvites/{token} {
       allow get: if true;
       allow list: if signedIn() && canManageMembers(resource.data.project_id);
-      allow create: if signedIn() && canManageMembers(request.resource.data.project_id);
+      allow create: if signedIn() &&
+        canManageMembers(request.resource.data.project_id) &&
+        validInviteCreate(token);
       allow update: if signedIn() && (
-        canManageMembers(resource.data.project_id) ||
+        (
+          canManageMembers(resource.data.project_id) &&
+          validManagedInviteUpdate()
+        ) ||
         (
           request.auth.token.email == resource.data.invited_email &&
           resource.data.status == "Pending" &&
+          resource.data.expires_at is timestamp &&
+          resource.data.expires_at > request.time &&
           request.resource.data.status in ["Accepted", "Rejected"] &&
           request.resource.data.project_id == resource.data.project_id &&
           request.resource.data.invited_email == resource.data.invited_email &&
@@ -234,7 +411,7 @@ service cloud.firestore {
               request.resource.data.status == "Accepted" &&
               request.resource.data.accepted_by == request.auth.uid &&
               request.resource.data.accepted_at != null &&
-              request.resource.data.diff(resource.data).changedKeys().hasOnly([
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                 "status",
                 "accepted_by",
                 "accepted_at",
@@ -245,7 +422,7 @@ service cloud.firestore {
               request.resource.data.status == "Rejected" &&
               request.resource.data.accepted_by == resource.data.accepted_by &&
               request.resource.data.accepted_at == resource.data.accepted_at &&
-              request.resource.data.diff(resource.data).changedKeys().hasOnly([
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
                 "status",
                 "updated_at"
               ])
@@ -262,19 +439,26 @@ service cloud.firestore {
         resource.data.created_by == request.auth.uid ||
         canViewProject(projectId)
       );
-      allow update, delete: if projectOwner(projectId);
+      allow update: if canEditSection(projectId, 'can_edit_project') &&
+        request.resource.data.created_by == resource.data.created_by;
+      allow delete: if projectOwner(projectId);
       allow create: if createsOwned('created_by');
     }
 
     match /contractors/{contractorId} {
-      allow read, update, delete: if ownsResource('created_by');
+      allow read, delete: if ownsResource('created_by');
+      allow update: if ownsResource('created_by') &&
+        request.resource.data.created_by == resource.data.created_by;
       allow create: if createsOwned('created_by');
     }
 
     match /trades/{tradeId} {
       allow read: if canViewSection(resource.data.project_id, 'can_view_trades') ||
         canEditSection(resource.data.project_id, 'can_edit_trades');
-      allow update, delete: if canEditSection(resource.data.project_id, 'can_edit_trades');
+      allow update: if canEditSection(resource.data.project_id, 'can_edit_trades') &&
+        request.resource.data.project_id == resource.data.project_id &&
+        request.resource.data.created_by == resource.data.created_by;
+      allow delete: if canEditSection(resource.data.project_id, 'can_edit_trades');
       allow create: if signedIn() &&
         request.resource.data.created_by == request.auth.uid &&
         canEditSection(request.resource.data.project_id, 'can_edit_trades');
@@ -283,7 +467,10 @@ service cloud.firestore {
     match /tradePhases/{phaseId} {
       allow read: if canViewSection(resource.data.project_id, 'can_view_trade_phases') ||
         canEditSection(resource.data.project_id, 'can_edit_trade_phases');
-      allow update, delete: if canEditSection(resource.data.project_id, 'can_edit_trade_phases');
+      allow update: if canEditSection(resource.data.project_id, 'can_edit_trade_phases') &&
+        request.resource.data.project_id == resource.data.project_id &&
+        request.resource.data.created_by == resource.data.created_by;
+      allow delete: if canEditSection(resource.data.project_id, 'can_edit_trade_phases');
       allow create: if signedIn() &&
         request.resource.data.created_by == request.auth.uid &&
         canEditSection(request.resource.data.project_id, 'can_edit_trade_phases') &&
@@ -295,7 +482,13 @@ service cloud.firestore {
       allow read: if canViewSection(resource.data.project_id, 'can_view_activity') ||
         canEditSection(resource.data.project_id, 'can_edit_activity') ||
         ownsResource('user_id');
-      allow create: if createsOwned('user_id') || (
+      allow create: if (
+        createsOwned('user_id') &&
+        (
+          request.resource.data.project_id == null ||
+          canViewProject(request.resource.data.project_id)
+        )
+      ) || (
         request.resource.data.action_type == 'material_receipt_submitted' &&
         validMaterialReceiptLink(
           request.resource.data.action_link_token,
@@ -313,7 +506,11 @@ service cloud.firestore {
     match /materialOrders/{orderId} {
       allow read: if canViewSection(resource.data.project_id, 'can_view_material_orders') ||
         canEditSection(resource.data.project_id, 'can_edit_material_orders');
-      allow update: if canEditSection(resource.data.project_id, 'can_edit_material_orders') ||
+      allow update: if (
+          canEditSection(resource.data.project_id, 'can_edit_material_orders') &&
+          request.resource.data.project_id == resource.data.project_id &&
+          request.resource.data.created_by == resource.data.created_by
+        ) ||
         validMaterialReceiptOrderUpdate(orderId);
       allow delete: if canEditSection(resource.data.project_id, 'can_edit_material_orders');
       allow create: if signedIn() &&
@@ -350,7 +547,10 @@ service cloud.firestore {
     match /punchItems/{punchItemId} {
       allow read: if canViewSection(resource.data.project_id, 'can_view_punch_items') ||
         canEditSection(resource.data.project_id, 'can_edit_punch_items');
-      allow update, delete: if canEditSection(resource.data.project_id, 'can_edit_punch_items');
+      allow update: if canEditSection(resource.data.project_id, 'can_edit_punch_items') &&
+        request.resource.data.project_id == resource.data.project_id &&
+        request.resource.data.created_by == resource.data.created_by;
+      allow delete: if canEditSection(resource.data.project_id, 'can_edit_punch_items');
       allow create: if signedIn() &&
         request.resource.data.created_by == request.auth.uid &&
         canEditSection(request.resource.data.project_id, 'can_edit_punch_items');
@@ -362,7 +562,18 @@ service cloud.firestore {
         ownsResource('submitted_by');
       allow create: if createsOwned('submitted_by') &&
         canViewSection(request.resource.data.project_id, 'can_view_trade_phases');
-      allow update: if canEditSection(resource.data.project_id, 'can_edit_trade_phases');
+      allow update: if canEditSection(resource.data.project_id, 'can_edit_trade_phases') &&
+        request.resource.data.project_id == resource.data.project_id &&
+        request.resource.data.trade_phase_id == resource.data.trade_phase_id &&
+        request.resource.data.submitted_by == resource.data.submitted_by &&
+        request.resource.data.reviewed_by == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'review_notes',
+          'reviewed_by',
+          'reviewed_at',
+          'updated_at'
+        ]);
       allow delete: if false;
     }
 
@@ -386,7 +597,13 @@ service cloud.firestore {
       allow read: if canViewSection(resource.data.project_id, 'can_view_documents') ||
         canEditSection(resource.data.project_id, 'can_edit_documents') ||
         ownsResource('uploaded_by');
-      allow update, delete: if canEditSection(resource.data.project_id, 'can_edit_documents');
+      allow update: if canEditSection(resource.data.project_id, 'can_edit_documents') &&
+        request.resource.data.project_id == resource.data.project_id &&
+        request.resource.data.uploaded_by == resource.data.uploaded_by &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'pinned', 'updated_at'
+        ]);
+      allow delete: if canEditSection(resource.data.project_id, 'can_edit_documents');
       allow create: if createsOwned('uploaded_by') &&
         canEditSection(request.resource.data.project_id, 'can_edit_documents');
     }
@@ -396,23 +613,21 @@ service cloud.firestore {
     match /contractorActionLinks/{token} {
       allow get: if true;
       allow list: if ownsResource('created_by');
-      allow update: if ownsResource('created_by') || (
-        validMaterialReceiptLink(token, resource.data.related_entity_id, resource.data.project_id) &&
-        request.resource.data.status == 'Used' &&
-        request.resource.data.used_at == request.time &&
-        request.resource.data.diff(resource.data).changedKeys().hasOnly([
-          'status', 'used_at', 'updated_at'
-        ])
-      );
-      allow create: if createsOwned('created_by') &&
-        (
+      allow update: if (
+          ownsResource('created_by') &&
           (
-            request.resource.data.action_type == 'Material Receipt Upload' &&
-            request.resource.data.related_entity_type == 'material_order' &&
-            canEditSection(request.resource.data.project_id, 'can_edit_material_orders')
-          ) ||
-          canEditSection(request.resource.data.project_id, 'can_edit_trade_phases')
-        );
+            (
+              resource.data.action_type == 'Material Receipt Upload' &&
+              canEditSection(resource.data.project_id, 'can_edit_material_orders')
+            ) ||
+            (
+              resource.data.action_type != 'Material Receipt Upload' &&
+              canEditSection(resource.data.project_id, 'can_edit_project')
+            )
+          ) &&
+          validManagedActionLinkUpdate(token)
+        ) || validActionLinkUse(token);
+      allow create: if createsOwned('created_by') && validActionLinkCreate(token);
       allow delete: if false;
     }
   }
