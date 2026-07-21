@@ -44,9 +44,24 @@ Firebase Authentication manages accounts. Cloud Firestore stores project and wor
 
 Firestore rules enforce project and section permissions. Firestore and Storage rules limit receipt submissions to the correct project, material order, and active link. The project workspace reads a participant's access before loading its sections, so it does not request information that person is not allowed to see.
 
-I developed most of the submission-period work in VS Code with GitHub Copilot Chat using GPT-5.6 Sol. It helped me inspect the existing code, plan changes, implement the receipt and project workspace flows, and build browser tests. I reviewed those changes and validated the application with lint checks, production builds, and Playwright tests against Firebase.
+## How I used GPT-5.6 and Codex
+
+GPT-5.6 and Codex were development tools for this submission; PhaseBinder does not call a language model at runtime.
+
+I developed most of the submission-period features in VS Code with GitHub Copilot Chat using GPT-5.6 Sol. It helped me inspect the existing code, plan changes, implement the receipt and project workspace flows, and build browser tests. I reviewed those changes and validated the application with lint checks, production builds, and Playwright tests against Firebase.
 
 Before submitting, I opened the same repository in the official Codex desktop app for a final release-candidate review. Codex traced the project permission model through the interface, Firestore, and Storage; checked the one-time receipt transaction; ran the full live browser suite; and made targeted fixes where the review found real security or judge-path problems. Those fixes prevent a participant from expanding their own invite permissions, apply project section permissions to stored files, enforce server-side invite expiration, and keep a project material link working even when the bounded global material list is full.
+
+The dated repository evidence is:
+
+| Date | Tool and contribution | Commit evidence |
+| --- | --- | --- |
+| July 16, 2026 | GPT-5.6 Sol in Copilot Chat helped harden data access, account transitions, and Firebase cost controls. | [`27e4f4a`](https://github.com/DwellerD/AmmonsSoftware/commit/27e4f4a) |
+| July 17, 2026 | GPT-5.6 Sol in Copilot Chat helped build the material receipt photo verification workflow. | [`74fa098`](https://github.com/DwellerD/AmmonsSoftware/commit/74fa098) |
+| July 17, 2026 | GPT-5.6 Sol in Copilot Chat helped build permission-aware project workspaces and their browser coverage. | [`411bb41`](https://github.com/DwellerD/AmmonsSoftware/commit/411bb41) |
+| July 21, 2026 | Official Codex performed the final security review, fixed the permission and judge-path issues it found, reran validation, and deployed the release. | [`66ef0c9`](https://github.com/DwellerD/AmmonsSoftware/commit/66ef0c9) |
+
+I supplied the official Codex Session ID for the July 21 review in the private Devpost submission field. This README distinguishes the earlier GPT-5.6 Sol work from the final work completed in Codex so judges can evaluate each contribution accurately.
 
 ## Work completed during the submission period
 
@@ -62,7 +77,7 @@ PhaseBinder existed before the submission period. The main product work listed b
 
 5. In the final Codex review I closed participant self-escalation paths in Firebase rules, aligned stored project files with section permissions, verified the anonymous receipt batch and one-time replay protection in local emulators, and fixed direct material links after bounded collection reads.
 
-The dated commits that contain the main July 16–17 feature work are `27e4f4a`, `74fa098`, and `411bb41`.
+The first four items map to the July 16–17 commits above. The fifth item and final deployed release are recorded in `66ef0c9`.
 
 ## How judges can test it
 
@@ -111,6 +126,14 @@ npm run dev
 Open http://localhost:3000
 
 ## Validation
+
+Final release verification on July 21, 2026:
+
+- ESLint passed.
+- The Next.js production build passed and generated 18 routes.
+- The full Playwright suite finished with 15 passed and 1 intentionally skipped contractor-portal case.
+- Firestore and Storage rules compiled successfully, and focused emulator checks covered invite escalation, participant self-updates, cross-project invite changes, document permissions, anonymous receipt submission, and one-time-link replay protection.
+- Commit `66ef0c9` was deployed through Vercel, and the reviewed Firestore and Storage rules were released to Firebase.
 
 ```bash
 npm run lint
