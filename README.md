@@ -1,459 +1,123 @@
 # PhaseBinder
 
-> Mobile-first construction workflow app for general contractors and site
-> supervisors.
+PhaseBinder is a construction workflow app I built for general contractors and site supervisors. It puts project readiness, materials, inspections, punch work, documents, and participant access in one place so important job information does not stay scattered across texts and spreadsheets.
 
-Production domain: <https://phasebinder.com>
+## Live project
 
-PhaseBinder helps a GC manage **trade readiness, material tracking, contractor
-scheduling, completion proof, inspection approvals, punch lists, a document
-vault, lightweight contractor action links, and daily project visibility** —
-all from their phone or desktop.
+Live demo: https://phasebinder.com
 
-This repository contains the **Sprint 3** build (a document vault, tokenized
-contractor action links for schedule confirmations and punch updates, and a
-real notification workflow structure) on top of the Sprint 1 and Sprint 2
-foundations.
+Code: https://github.com/DwellerD/AmmonsSoftware
 
----
+Category: Work and Productivity
 
-## The problem it solves
+## The problem
 
-On a busy job site, a general contractor juggles dozens of trades across
-multiple buildings. Knowing _what is ready, what is blocked, who is scheduled,
-and what needs inspection_ usually lives in texts, spreadsheets, and the GC's
-head. PhaseBinder turns that into a single, structured, auditable system so the
-GC can start each day with a clear overview and keep every piece of work moving.
+A general contractor has to keep track of many trades, deliveries, inspections, and documents at the same time. A missed delivery or hidden punch item can hold up several people. PhaseBinder gives the contractor a clear view of each project and gives participants access only to the information they need.
 
-## Tech stack
+## What it does
 
-- **Next.js 16** (App Router) + **React 19**
-- **TypeScript** throughout
-- **Tailwind CSS v4** (configured in `src/app/globals.css`)
-- **Firebase** — **Authentication** (email/password, plus anonymous sessions for
-  contractor action links) + **Cloud Firestore** + **Cloud Storage**
-  (completion photos and project documents)
+1. Creates and organizes construction projects.
 
-## Project structure
+2. Tracks trades and trade phases from readiness through approval.
 
-```
-src/
-  app/
-    page.tsx                 Public landing page ("PhaseBinder is running")
-    login/                   Login / sign-up screen
-    link/[token]/            Public contractor action link (no login required)
-    (app)/                   Authenticated area (shares nav + auth guard)
-      layout.tsx             Client-side auth guard, renders the AppShell
-      dashboard/             GC daily dashboard
-      projects/              Projects list + detail
-      trades/                Trades list + create
-      contractors/           Contractors list + create
-      trade-phases/          Trade phase list, create form, detail
-      material-orders/       Material tracking list + create form
-      punch-items/           Punch list across all projects
-      documents/             Document Vault (list, search/filter, upload)
-      notifications/         Notification history (records + filters)
-  components/
-    ui/                      Reusable UI primitives (Button, Card, Field, …)
-    layout/AppShell.tsx      Sidebar + mobile nav (role-aware)
-    auth/                    Login form + logout button
-    forms/                   Trade phase, material order + document upload forms
-    phase/                   Phase detail sections (materials, completion, punch,
-                             documents, schedule confirmation, link buttons)
-    documents/               Pinned plans section for project detail
-    contractor/              Public contractor action link screens
-    providers/               AuthProvider (Firebase auth state + role)
-  lib/
-    firebase/client.ts       Firebase app/Auth/Firestore/Storage + anon session
-    api.ts                   Data-access layer (all Firestore queries live here)
-    constants.ts             Roles, statuses, status colors, document/link types
-    database.types.ts        TypeScript types for every collection
-    materials.ts             Material readiness helper
-    documents.ts             Document helpers (type inference, tags, sizes, paths)
-    actionLinks.ts           Tokenized link helpers (generate/validate/expire)
-    notifications.ts         Notification delivery service structure
-    format.ts                Date/time formatting helpers
-firestore.rules              Firestore security rules
-storage.rules                Cloud Storage security rules (photos + documents)
-firestore.indexes.json       Firestore composite index definitions
-firebase.json                Firebase CLI config (Firestore + Storage rules)
-.firebaserc                  Default Firebase project (ammonssoftware)
-scripts/
-  seed.ts                    Safe demo-data seeder (npm run seed)
-```
+3. Tracks material orders, expected arrival dates, delays, and verified receipts.
 
----
+4. Lets a receiver upload delivery photos through a secure one time link without creating an account.
 
-## Running the app locally
+5. Lets the general contractor review delivery proof before marking material as received.
 
-### 1. Install dependencies
+6. Tracks completion proof, inspections, and punch items.
+
+7. Stores project documents and keeps important plans easy to find.
+
+8. Invites project participants and controls which project areas each person can see or edit.
+
+9. Gives every project its own workspace with Overview, Trade Phases, Materials, Punch List, and Documents.
+
+## Participant permissions
+
+Project access is enforced in the interface and in Firebase security rules. A participant only sees project tabs that match the permissions granted by the project owner. For example, a participant can receive access to Trade Phases and Materials without seeing Punch List, Documents, or user management.
+
+Removing a participant removes the project from their account and prevents direct access to the project address.
+
+## Work completed during the submission period
+
+PhaseBinder existed before the submission period. The work listed here was added on July 16 and July 17, 2026.
+
+1. I hardened project data access with bounded reads, duplicate protection, permission checks, safer account transitions, and improved Firebase cost controls.
+
+2. I added secure material receipt verification. A contractor can create a limited upload link, a receiver can submit delivery photos, and the contractor can review the proof before accepting the delivery.
+
+3. I added a permission aware project workspace. Each project now brings its phases, materials, punch items, documents, plans, activity, and participant controls into one organized view.
+
+4. I added live browser tests for owner access, participant access, permission changes, receipt verification, revocation, and project isolation.
+
+The dated commits that contain this work are `27e4f4a`, `74fa098`, and `411bb41`.
+
+## How judges can test it
+
+No rebuild is needed.
+
+1. Open https://phasebinder.com
+
+2. Select Sign in and create a free account.
+
+3. Create a project and open it to view the project workspace.
+
+4. Add trade phases, material orders, punch items, or documents and confirm they appear inside that project.
+
+5. Open a material order and create a receipt upload link. Open that link in a private browser window, submit delivery photos, then return to the signed in account to review the receipt.
+
+6. To test participant access, invite a second email address from the project Overview. Sign in with that address, accept the invite, and confirm the project appears with only the permitted tabs.
+
+7. Return to the owner account, change the participant permissions, then sign back in as the participant to confirm the project workspace changes with those permissions.
+
+8. Revoke access and confirm the participant can no longer see or open the project.
+
+## Supported platforms
+
+PhaseBinder is a responsive web application. It supports current versions of Chrome, Safari, Firefox, and Edge on desktop and mobile devices.
+
+## Technology
+
+PhaseBinder uses Next.js 16, React 19, TypeScript, Tailwind CSS, Firebase Authentication, Cloud Firestore, Cloud Storage, and Playwright.
+
+## Run locally
+
+Install Node.js 20 or newer.
 
 ```bash
 npm install
 ```
 
-### 2. Set up a Firebase project
-
-1. Go to <https://console.firebase.google.com> and open (or create) the project
-   `ammonssoftware`.
-2. **Build → Authentication → Get started**, then enable the
-   **Email/Password** sign-in provider. Also enable the **Anonymous** provider —
-   the schedule-confirmation action link signs visitors in anonymously so their
-   reads/writes satisfy the `signedIn()` Firestore rules without a full account.
-  Add `phasebinder.com` to **Authentication → Settings → Authorized domains**.
-3. **Build → Firestore Database → Create database** (start in production mode;
-   the rules in this repo lock it down to signed-in users).
-4. **Build → Storage → Get started** to provision the default Cloud Storage
-   bucket. It stores completion photos and project documents. The
-   `storage.rules` in this repo restrict completion-photo uploads to image
-   files under 15 MB and project-document uploads to signed-in users under
-   25 MB.
-5. **Project settings → General → Your apps → Web app** (`</>`). Register a web
-   app to obtain its config values (`apiKey`, `appId`, etc.).
-
-### 3. Configure environment variables
-
-Copy the example file and fill in the values from your Firebase **web app
-config**:
+Create the local environment file from the included example.
 
 ```bash
 cp .env.local.example .env.local
 ```
 
-| Variable | Required | Used for |
-| --- | --- | --- |
-| `NEXT_PUBLIC_FIREBASE_API_KEY` | ✅ | Browser SDK auth (safe to expose) |
-| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | ✅ | Firebase Auth domain |
-| `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | ✅ | Firestore / project targeting |
-| `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | ✅ | Storage bucket (Sprint 2) |
-| `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | ✅ | Cloud messaging / project number |
-| `NEXT_PUBLIC_FIREBASE_APP_ID` | ✅ | Identifies this web app |
-| `NEXT_PUBLIC_NOTIFICATIONS_EMAIL_ENABLED` | — | **Reserved / disabled.** A future hook for email delivery. The current MVP does not send email or SMS, so this has no effect today. |
-| `GOOGLE_APPLICATION_CREDENTIALS` | Only for seeding | Path to a service-account key so `npm run seed` (Admin SDK) can write data. **Server-only — never expose to the browser.** |
-
-The `NEXT_PUBLIC_FIREBASE_*` values are public by design (the browser SDK needs
-them); access is controlled by Firestore security rules and Auth, not by hiding
-these keys. `.env.local` is git-ignored.
-
-### 4. Start the dev server
+Add the Firebase web application values to `.env.local`, then start the app.
 
 ```bash
 npm run dev
 ```
 
-Open <http://localhost:3000>. You should see the **"PhaseBinder is running"**
-landing page. Click **Sign in**, create an account, and you'll land on the
-dashboard.
+Open http://localhost:3000
 
-For production, the app is intended to be served at <https://phasebinder.com>.
-
-### 5. Deploy Firestore and Storage security rules
-
-The repo ships with `firestore.rules` and `storage.rules`. Deploy them with the
-Firebase CLI:
+## Validation
 
 ```bash
-npx firebase deploy --only firestore:rules
-npx firebase deploy --only storage
+npm run lint
+npm run build
+npm run test:e2e
 ```
 
-(`npx firebase login` first if you haven't authenticated the CLI. The Storage
-bucket must be provisioned in the console — step 4 above — before the storage
-rules will deploy.)
+The browser tests use a live Firebase test account configured through the ignored file `tests/e2e/.env`. The full suite runs serially because several workflows create and verify shared project data.
 
-### 6. (Optional) Load demo data
+## Security
 
-The seeder uses the **Firebase Admin SDK**, which needs credentials. Pick one:
+Local environment values and Firebase service account files are ignored by Git. Firestore and Storage rules enforce project access, scoped receipt uploads, file limits, token expiration, and one time use.
 
-- `gcloud auth application-default login` (recommended for local dev), **or**
-- download a service-account key (Firebase **Project settings → Service
-  accounts → Generate new private key**) and point `GOOGLE_APPLICATION_CREDENTIALS`
-  at the JSON file.
+## License
 
-Then run:
-
-```bash
-npm run seed
-```
-
-This creates a sample 40-unit apartment project with contractors, trades, and
-trade phases in various statuses — plus Sprint 2 data (material orders,
-completion submissions, punch items, recent activity) and Sprint 3 data:
-project documents (including pinned blueprints/layouts, a contract, an invoice,
-a change order, and a permit), tokenized contractor action links (an active
-schedule confirmation, an active punch update, and a used link), example
-schedule confirmations (pending and declined), a contractor punch-item update,
-and notification records covering the new event types — so the dashboard,
-document vault, and notification history look realistic. The seeder is
-**safe**: it refuses to run in production and skips entirely if the demo project
-already exists.
-
-> Because the seeder skips when the demo project exists, re-running it will
-> **not** add the new Sprint 3 data to an already-seeded database. To pick up
-> the Sprint 3 demo records, delete the existing `Maple Street Apartments
-> (Demo)` project (and its related docs) first, then run `npm run seed` again.
-
-### 7. Firebase budget and usage guardrails (recommended)
-
-For production readiness on Blaze, configure basic spend visibility before
-traffic grows:
-
-1. Create a Firebase/Google Cloud budget for this project and add alerts at
-  25%, 50%, 75%, 90%, and 100%.
-2. Enable billing emails for owners/admins, and route alerts to your team
-  channel if possible.
-3. Watch Firestore operations (reads/writes/deletes), Storage egress, and
-  document/photo growth weekly.
-4. Investigate sudden jumps quickly: they usually come from unbounded list
-  queries, repeated writes, or repeated invite/link generation.
-
-PhaseBinder includes MVP safeguards to reduce obvious cost risk (bounded list
-reads, list pagination, and dedupe protection for repeated invites/action links/
-notifications), but budget alerts are still your first operational safety net.
-
----
-
-## How Firebase is used
-
-- **Auth** — email/password sign-in via Firebase Authentication. The login form
-  creates the account and writes a `users/{uid}` profile document (with a
-  default role). `AuthProvider` exposes the current user + role to the app via
-  the `useAuth()` hook. **Anonymous sessions** are used for contractor action
-  links: the public `/link/[token]` page signs the visitor in anonymously
-  (`ensureAnonymousSession()`) so their reads/writes satisfy the `signedIn()`
-  rules without a full account.
-- **Firestore** — a NoSQL document store holds `projects`, `contractors`,
-  `trades`, `tradePhases`, `activityLogs`, `users`, the Sprint 2 collections
-  (`materialOrders`, `completionRecords`, `inspections`, `punchItems`,
-  `notifications`), and the Sprint 3 collections: `documents` (the document
-  vault) and `contractorActionLinks` (tokenized links). Firestore has no joins,
-  so the data layer (`src/lib/api.ts`) loads related collections and stitches
-  names together in memory.
-- **Storage** — Cloud Storage holds completion photos under
-  `completion/{tradePhaseId}/` and project documents under
-  `documents/{projectId}/`. Upload flows push the files, then store their
-  download URLs (and the storage path) on the relevant Firestore document.
-  `storage.rules` allow signed-in users to read, restrict completion-photo
-  uploads to image files up to 15 MB, and restrict document uploads to any file
-  type up to 25 MB.
-- **Scoped action links** — instead of giving external recipients full
-  accounts, the GC generates a tokenized link for one action. In the current
-  MVP these links support **schedule confirmation** and **material receipt
-  photo upload**. For schedule confirmation, the
-  token doubles as the Firestore document id so an unauthenticated visitor can
-  fetch exactly one link by URL; `actionLinks.ts` generates, validates, and
-  expires it (status `Active` → `Used` / `Expired` / `Revoked`, default 14-day
-  TTL). The public screen validates the expected entity and marks the link
-  used after submission. *Other action-link types (punch update, document
-  request, completion submission) are scaffolded but disabled — see below.*
-- **Material receipt verification links** — from Material tracking, open an
-  order and generate a one-time upload link for manual sharing by text or
-  email. The receiver sees only a safe order summary and can submit up to six
-  images (10 MB each), plus an optional name and note. Submission stores photos
-  under `material-receipts/{projectId}/{materialOrderId}/{token}/`, creates a
-  `materialReceiptUploads` record, moves the order to `Pending Verification`,
-  consumes the link, and appends an activity entry. The GC reviews the photos
-  and marks the order `Received` or `Issue Found`.
-- **Internal notification records** — `notifications.ts` records a Firestore
-  `notifications` document for key workflow events (`dispatchNotification`) so
-  they appear in history. **No email/SMS/push is sent.** The email/SMS
-  “prepare” helpers are preserved as a future seam but are not called. There is
-  no automated messaging in this build.
-- **Security rules** — `firestore.rules` enforce project-scoped access for GC
-  data. Action-link documents allow direct token lookup; a valid material
-  receipt token can create one scoped receipt, move only its material order to
-  `Pending Verification`, append one activity record, and consume itself.
-  `storage.rules` require authentication for normal files and grant receipt
-  tokens create-only access to their exact image path.
-- **Route protection** — auth is client-side. The `(app)` layout is a client
-  component that waits for auth state, then redirects unauthenticated visitors
-  to `/login`.
-
-### Material receipt security assumptions
-
-- Receipt upload URLs are bearer tokens: anyone with the link can use it until
-  it is used, revoked, or expires after 14 days. Share them only with the
-  intended receiver.
-- Receivers do not need PhaseBinder or Firebase accounts. Firestore and Storage
-  rules authorize only the token's exact project/material path and restrict
-  submission to the `Pending Verification` transition.
-- A link is one-time use, but uploaded files may remain in Storage if a network
-  failure occurs before the final Firestore batch. Automatic cleanup is outside
-  this focused MVP.
-- Receipt files are images only, limited to six files and 10 MB per file.
-
----
-
-## Sprint 1 feature set
-
-- ✅ Next.js + TypeScript project foundation
-- ✅ Tailwind base UI (buttons, cards, fields, badges, page layout)
-- ✅ Firebase connection (Auth + Firestore client)
-- ✅ Firestore data model: projects, trades, contractors, trade phases, activity logs
-- ✅ Email/password authentication with protected routes and logout
-- ✅ User roles (`admin`, `gc_site_super`, `internal_team`, `contractor`)
-- ✅ Authenticated app layout with desktop + mobile navigation
-- ✅ Project management (list, create, detail)
-- ✅ Trade management (list, create)
-- ✅ Contractor management (list, create)
-- ✅ Trade phases: create form, filterable list, detail page with status updates
-- ✅ Activity logging on key actions
-- ✅ GC daily dashboard (active / today / blocked / needs-inspection + feeds)
-- ✅ Safe demo-data seeder
-- ✅ Deployment-ready production build
-
-## Trade phase statuses
-
-`Not Ready` → `Materials Pending` → `Ready to Schedule` → `Scheduled` →
-`In Progress` → `Submitted Complete` → `Needs Inspection` → `Approved`
-(plus `Blocked`).
-
----
-
-## Sprint 2 feature set
-
-Built on top of the Sprint 1 foundation:
-
-- ✅ **Material tracking** — material orders with supplier, expected/actual
-  arrival, and lifecycle status (`Needed` → `Ordered` → `Arriving` →
-  `Received`, plus `Delayed` / `Cancelled`); filterable list and a per-phase
-  materials readiness banner.
-- ✅ **Completion proof** — contractors submit notes + one or more photos from
-  their phone; photos upload to Firebase Storage and metadata is stored in
-  Firestore. Submitting moves the phase to `Submitted Complete`.
-- ✅ **GC inspection approval** — the GC reviews a submission and either
-  approves it (phase → `Approved`) or sends it back as needs-fix (phase →
-  `In Progress`) with inspection notes. Each decision is logged and recorded.
-- ✅ **Punch items** — title, description, assigned contractor, priority
-  (`Low`/`Medium`/`High`/`Critical`), due date, and status
-  (`Open` → `In Progress` → `Resolved` → `Closed`). Created from a phase and
-  managed on a dedicated punch list with project/status/contractor filters.
-- ✅ **Dashboard updates** — materials arriving today, delayed materials,
-  phases submitted for review, phases needing inspection, and open/overdue
-  punch items.
-- ✅ **Notification records** — in-app records created when completion proof is
-  submitted, a punch item is assigned, or a material is marked delayed (no real
-  SMS/email/push yet), viewable on the Notifications screen for dev/testing.
-- ✅ **Storage security rules** + updated seed data covering all of the above.
-
-### What's **not** included in Sprint 2
-
-- Real notification delivery (SMS / email / push) — only records are created
-- Photo annotation / markup
-- Documents (drawings, contracts, change orders)
-- Per-project / per-role data restrictions (rules are still permissive)
-
----
-
-## Sprint 3 feature set
-
-Built on top of the Sprint 1 and Sprint 2 foundations:
-
-- ✅ **Document Vault** — upload project documents (blueprints, layouts,
-  contracts, invoices, change orders, permits, photos, and more) to Firebase
-  Storage with a Firestore record per file. Files can be tagged and optionally
-  attached to a trade, phase, contractor, or punch item. The vault offers
-  text search (name + tags) and project / type / trade / pinned filters, with
-  pinned items sorted first. The upload form auto-fills the name and infers the
-  document type from the file, and shows a live upload progress bar (uploads
-  are capped at 25 MB).
-- ✅ **Pinned blueprints & layouts** — blueprints and layouts can be pinned so
-  the current plans are one tap away. Pinned plans surface in a dedicated vault
-  section, on the relevant project's detail page, and on the dashboard.
-- ✅ **Documents on the phase page** — each trade phase detail page lists the
-  documents attached to that phase and lets the GC upload a new one inline
-  (pre-scoped to that project + phase).
-- ✅ **Schedule confirmation flow** — the GC requests a contractor confirm a
-  scheduled date; the contractor opens a tokenized link on their phone (no
-  account needed) and confirms or declines with a reason. The phase records the
-  confirmation status and note. `validateActionLink()` centralizes the link
-  security checks (existence, revoked, expired, used, entity-match) with clear
-  per-reason error screens, and Firestore rules allow a token `get` but restrict
-  listing and writes.
-- ✅ **Internal notification records** — workflow events still write a Firestore
-  notification record (visible on the Notifications screen, which is kept on
-  disk for dev/testing). **No email/SMS/push is sent.**
-- ✅ **Updated Storage rules** + updated seed data covering all of the above.
-
-> #### Scope-tightened for the GC MVP (disabled, code preserved)
->
-> The following were scaffolded but are **intentionally turned off** in the
-> current build because the GC does not need automated messaging or a
-> contractor self-service portal yet. The code is preserved (marked
-> `// FUTURE FEATURE:`) so it can be re-enabled later:
->
-> - **Automated messaging** — real email/SMS/push delivery. `dispatchNotification`
->   now only records a notification; the email/SMS “prepare” helpers are kept but
->   not called. The dashboard messaging/notification cards and the Notifications
->   nav entry are removed.
-> - **Contractor portal beyond schedule confirmation** — the punch-item update
->   link flow (`PunchItemUpdateAction`, `PunchItemLinkButton`) is disabled; punch
->   items are managed by the GC only. Contractor notes already in the data still
->   display read-only.
-> - **Extra action-link types** — only `Schedule Confirmation` is active.
->   `Completion Submission`, `Punch Item Update`, and `Document Request` remain in
->   the type union and helpers but are commented out of `ACTION_LINK_TYPES`.
-
-### What's **not** included in Sprint 3
-
-- Document versioning, preview/annotation, or markup
-- Per-project / per-role data restrictions (rules are still permissive beyond
-  the action-link token check)
-
----
-
-## Intentionally **not** included yet
-
-To keep the current scope focused, these are deliberately left out:
-
-- Payment processing and accounting integrations
-- Bid comparison / bidding tools
-- Native mobile apps
-- AI features
-- Blueprint markup / document annotation
-- Full SMS automation (real outbound SMS/email delivery)
-- Complex / advanced calendar scheduling (Gantt, dependencies, critical path)
-- Procore-style enterprise per-project / per-role permissions (rules are
-  permissive for now)
-
-## Planned next
-
-Recommended focus areas for a future sprint:
-
-- **Real notification delivery** — wire the prepared email/SMS deliveries to a
-  provider (e.g. Firebase Cloud Functions + SendGrid/Twilio) and add a
-  per-user inbox with unread counts.
-- **Project-scoped security rules** — per-project membership and role checks in
-  both Firestore and Storage rules, replacing the permissive MVP rules.
-- **Punch item photos** — let contractors attach before/after photos to punch
-  items, reusing the completion-photo upload pattern.
-- **Document previews** — in-app previews/thumbnails and versioning for vault
-  documents.
-- **Reporting / exports** — per-project status and punch-list summaries (PDF/CSV)
-  for owners and inspectors.
-- **Scheduling** — calendar/Gantt view of phases with dependencies.
-
----
-
-## Deployment
-
-The app is a standard Next.js build and can be hosted on any platform that runs
-Next.js. **Firebase App Hosting** is a natural fit since the backend already
-lives in Firebase, but Vercel or any Node host works too.
-
-1. Push this repository to your Git provider.
-2. Import it into your host (Firebase App Hosting, Vercel, etc.).
-3. Add the `NEXT_PUBLIC_FIREBASE_*` environment variables from the table above
-   in the host's project settings.
-4. Make sure your Firestore and Storage security rules are deployed:
-
-   ```bash
-   npx firebase deploy --only firestore:rules
-   npx firebase deploy --only storage
-   ```
-
-5. Deploy. The production build is verified with:
-
-   ```bash
-   npm run build
-   ```
+This project is available under the MIT License in `LICENSE`.
